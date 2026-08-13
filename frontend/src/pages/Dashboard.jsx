@@ -8,6 +8,10 @@ import { api, payWithRazorpay, setupAutopay, formatApiErrorDetail, imgUrl, hapti
 
 const QUICK = [100, 250, 500, 1000];
 
+function tomorrowStr() {
+  return new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+}
+
 function SuccessGlow({ text, onDone }) {
   return (
     <motion.div
@@ -30,37 +34,88 @@ function SuccessGlow({ text, onDone }) {
 }
 
 function Celebration({ kudamName, onClose }) {
+  const flakes = [...Array(34)];
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-sandalwood-paper/95 backdrop-blur-sm px-6"
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-henna/95 backdrop-blur-sm px-6 overflow-hidden"
       onClick={onClose}
       data-testid="kudam-celebration"
     >
-      {[...Array(18)].map((_, i) => (
+      {/* radial gold glow pulses */}
+      {[0, 1, 2].map((i) => (
         <motion.div
-          key={i}
-          className="absolute w-2 h-2 rounded-full"
-          style={{ background: i % 2 ? "#C5A059" : "#E5C17A", left: `${(i * 137) % 100}%`, top: "40%" }}
-          initial={{ y: 0, opacity: 1, scale: 1 }}
-          animate={{ y: [0, -180 - (i % 5) * 40, 240], opacity: [1, 1, 0], scale: [1, 1.4, 0.6] }}
-          transition={{ duration: 2.4 + (i % 4) * 0.3, repeat: Infinity, delay: i * 0.12, ease: "easeOut" }}
+          key={`ring-${i}`}
+          className="absolute rounded-full border border-gold/40"
+          style={{ width: 300 + i * 130, height: 300 + i * 130 }}
+          initial={{ scale: 0.6, opacity: 0 }}
+          animate={{ scale: [0.6, 1.15], opacity: [0, 0.7, 0] }}
+          transition={{ duration: 2.8, repeat: Infinity, delay: i * 0.7, ease: "easeOut" }}
         />
       ))}
+      {/* falling gold flakes */}
+      {flakes.map((_, i) => (
+        <motion.div
+          key={i}
+          className="absolute"
+          style={{
+            left: `${(i * 61) % 100}%`,
+            top: "-4%",
+            width: 4 + (i % 4) * 2,
+            height: 8 + (i % 3) * 4,
+            background: i % 3 === 0 ? "#E5C17A" : i % 3 === 1 ? "#C5A059" : "#F4EBD0",
+            opacity: 0.9,
+          }}
+          initial={{ y: -40, rotate: 0, opacity: 0 }}
+          animate={{
+            y: ["0vh", "110vh"],
+            x: [0, (i % 2 ? 1 : -1) * (20 + (i % 5) * 14)],
+            rotate: [0, (i % 2 ? 1 : -1) * (360 + (i % 4) * 180)],
+            opacity: [0, 1, 1, 0.6],
+          }}
+          transition={{ duration: 3.6 + (i % 5) * 0.7, repeat: Infinity, delay: (i * 0.17) % 2.4, ease: "linear" }}
+        />
+      ))}
+      {/* shimmer sweep */}
+      <motion.div
+        className="absolute inset-0 pointer-events-none"
+        style={{ background: "linear-gradient(115deg, transparent 30%, rgba(229,193,122,0.16) 50%, transparent 70%)" }}
+        animate={{ x: ["-100%", "100%"] }}
+        transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+      />
       <motion.div
         initial={{ scale: 0.7, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-        className="text-center"
+        transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+        className="text-center relative"
       >
-        <SavingsMandala progress={1} size={230} />
-        <h2 className="font-serif text-henna text-3xl md:text-4xl font-medium mt-8">The Kudam is full.</h2>
-        <p className="text-henna/70 text-sm mt-3 max-w-xs mx-auto">
-          "{kudamName}" is complete — a <span className="text-gold-dim font-semibold">20% feast discount</span> now awaits you at the Fresh Catch.
+        <motion.div
+          animate={{ scale: [1, 1.03, 1] }}
+          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+          className="inline-block"
+          style={{ filter: "drop-shadow(0 0 42px rgba(197,160,89,0.55))" }}
+        >
+          <SavingsMandala progress={1} size={230} />
+        </motion.div>
+        <motion.h2
+          className="font-serif text-3xl md:text-4xl font-medium mt-8"
+          style={{
+            background: "linear-gradient(90deg, #C5A059, #F4EBD0, #E5C17A, #C5A059)",
+            backgroundSize: "220% auto",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+          }}
+          animate={{ backgroundPosition: ["0% center", "220% center"] }}
+          transition={{ duration: 2.6, repeat: Infinity, ease: "linear" }}
+        >
+          The Kudam is full.
+        </motion.h2>
+        <p className="text-sandalwood/85 text-sm mt-3 max-w-xs mx-auto">
+          "{kudamName}" is complete — a <span className="text-gold font-semibold">20% feast discount</span> now awaits you at the Fresh Catch.
         </p>
-        <button className="btn-henna mt-8" onClick={onClose} data-testid="celebration-close-btn">Claim the Feast</button>
+        <button className="btn-henna !bg-gold !text-henna font-semibold mt-8" onClick={onClose} data-testid="celebration-close-btn">Claim the Feast</button>
       </motion.div>
     </motion.div>
   );
@@ -78,19 +133,22 @@ export default function Dashboard() {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [bookings, setBookings] = useState([]);
+  const [reservations, setReservations] = useState([]);
+  const [resDate, setResDate] = useState({});
   const [products, setProducts] = useState([]);
   const [reward, setReward] = useState(null);
   const [celebrate, setCelebrate] = useState(null);
   const [success, setSuccess] = useState("");
 
   const load = useCallback(async () => {
-    const [{ data: ks }, { data: bs }, { data: ps }, { data: rw }] = await Promise.all([
-      api.get("/kudams"), api.get("/bookings"), api.get("/products"), api.get("/rewards/status"),
+    const [{ data: ks }, { data: bs }, { data: ps }, { data: rw }, { data: rs }] = await Promise.all([
+      api.get("/kudams"), api.get("/bookings"), api.get("/products"), api.get("/rewards/status"), api.get("/reservations"),
     ]);
     setKudams(ks);
     setBookings(bs);
     setProducts(ps.slice(0, 3));
     setReward(rw);
+    setReservations(rs);
     setActiveId((prev) => prev || (ks[0] && ks[0].id));
   }, []);
 
@@ -162,6 +220,21 @@ export default function Dashboard() {
       setSuccess(`UPI Autopay active — ₹${plan} flows in every dawn.`);
     } catch (err) {
       setMsg(err.message || "Autopay setup failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const completeReservation = async (r) => {
+    haptic();
+    setBusy(true);
+    setMsg("");
+    try {
+      await payWithRazorpay({ pickup_date: resDate[r.id] || tomorrowStr() }, user, `/reservations/${r.id}/complete-order`);
+      setSuccess(`${r.product_name} confirmed — arriving with the 6 AM tide.`);
+      await load();
+    } catch (err) {
+      setMsg(err.message || "Payment failed");
     } finally {
       setBusy(false);
     }
@@ -395,6 +468,66 @@ export default function Dashboard() {
               </div>
             </section>
           </div>
+        )}
+
+        {reservations.length > 0 && (
+          <section className="mt-10" data-testid="reservations-section">
+            <p className="text-gold-dim text-[10px] uppercase" style={{ letterSpacing: "0.4em" }}>Reserved catches · off-season slots</p>
+            <h2 className="font-serif text-henna text-2xl md:text-3xl font-medium">Your place in the queue</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mt-5">
+              {reservations.map((r) => (
+                <div
+                  key={r.id}
+                  className={`card-white p-5 ${r.status === "arrived" ? "border border-gold shadow-[0_0_0_1px_#C5A059]" : ""}`}
+                  data-testid={`reservation-card-${r.id}`}
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="oval-cameo w-14 h-[72px] flex-shrink-0">
+                      <img src={imgUrl(r.image)} alt={r.product_name} className="w-full h-full object-cover" loading="lazy" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="tamil text-gold-dim text-xs">{r.tamil_name}</p>
+                      <p className="font-serif text-henna text-xl font-medium leading-tight">{r.product_name}</p>
+                      <p className="num text-henna/75 text-[12px] mt-1">{r.qty_kg} kg · ₹{r.total.toLocaleString("en-IN")} total</p>
+                      <p className="text-gold-dim text-[10px] uppercase mt-1" style={{ letterSpacing: "0.15em" }}>₹{r.advance_paid.toLocaleString("en-IN")} advance paid</p>
+                    </div>
+                  </div>
+                  {r.status === "reserved" && (
+                    <p className="text-henna/70 text-xs italic font-serif mt-4" data-testid={`reservation-waiting-${r.id}`}>
+                      Awaiting the boats — you'll be told first when it lands.
+                    </p>
+                  )}
+                  {r.status === "arrived" && (
+                    <div className="mt-4" data-testid={`reservation-arrived-${r.id}`}>
+                      <p className="text-gold-dim text-xs font-semibold uppercase" style={{ letterSpacing: "0.15em" }}>
+                        It has landed — claim your catch
+                      </p>
+                      <input
+                        className="input-ritual mt-3"
+                        type="date"
+                        min={tomorrowStr()}
+                        value={resDate[r.id] || tomorrowStr()}
+                        onChange={(e) => setResDate((d) => ({ ...d, [r.id]: e.target.value }))}
+                        data-testid={`reservation-date-input-${r.id}`}
+                      />
+                      <button
+                        className="btn-henna w-full mt-3"
+                        onClick={() => completeReservation(r)}
+                        disabled={busy}
+                        data-testid={`complete-reservation-btn-${r.id}`}
+                      >
+                        Complete · Pay ₹{r.balance_due.toLocaleString("en-IN")}
+                      </button>
+                    </div>
+                  )}
+                  {r.status === "completed" && (
+                    <p className="text-henna/60 text-xs italic font-serif mt-4">Completed — it sits among your orders.</p>
+                  )}
+                </div>
+              ))}
+            </div>
+            {msg && <p className="text-henna text-xs italic font-serif mt-3" data-testid="reservation-msg">{msg}</p>}
+          </section>
         )}
 
         <AnimatePresence>

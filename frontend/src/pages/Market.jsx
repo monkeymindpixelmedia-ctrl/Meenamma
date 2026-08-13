@@ -15,6 +15,7 @@ export default function Market() {
   const navigate = useNavigate();
   const [products, setProducts] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [mode, setMode] = useState("book");
   const [qty, setQty] = useState(1);
   const [date, setDate] = useState(tomorrow());
   const [busy, setBusy] = useState(false);
@@ -52,6 +53,24 @@ export default function Market() {
       if (user) api.get("/rewards/status").then(({ data }) => setReward(data)).catch(() => {});
     } catch (err) {
       setMsg(err.message || "Booking failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reserve = async (p) => {
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+    setBusy(true);
+    setMsg("");
+    try {
+      await payWithRazorpay({ product_id: p.id, qty_kg: Number(qty) }, user, "/reservations/create-order");
+      setMsg(`${p.name} reserved with a 25% advance — you'll be the first to know when it lands. Track it on your dashboard.`);
+      setSelected(null);
+    } catch (err) {
+      setMsg(err.message || "Reservation failed");
     } finally {
       setBusy(false);
     }
@@ -107,12 +126,11 @@ export default function Market() {
                   <p className="text-henna/85 text-sm leading-6 mt-3 font-serif italic">{p.story}</p>
                   <p className="text-gold-dim text-[10px] mt-2 uppercase" style={{ letterSpacing: "0.12em" }}>{p.handling}</p>
                   <button
-                    className="btn-henna w-full mt-5"
-                    onClick={() => { haptic(); setSelected(p); setMsg(""); }}
-                    disabled={!p.available}
-                    data-testid={`book-btn-${p.name.toLowerCase()}`}
+                    className={`w-full mt-5 ${p.available ? "btn-henna" : "btn-gold-outline"}`}
+                    onClick={() => { haptic(); setSelected(p); setMode(p.available ? "book" : "reserve"); setMsg(""); }}
+                    data-testid={p.available ? `book-btn-${p.name.toLowerCase()}` : `reserve-btn-${p.name.toLowerCase()}`}
                   >
-                    {p.available ? "Pre-Book" : "Off the boat today"}
+                    {p.available ? "Pre-Book" : "Off the boat — Reserve with 25%"}
                   </button>
                 </div>
               </motion.article>
@@ -152,22 +170,46 @@ export default function Market() {
                   <label className="text-henna/50 text-[9px] uppercase" style={{ letterSpacing: "0.25em" }}>Kilograms</label>
                   <input className="input-ritual mt-1" type="number" min="0.5" step="0.5" value={qty} onChange={(e) => setQty(e.target.value)} data-testid="booking-qty-input" />
                 </div>
-                <div className="flex-1">
-                  <label className="text-henna/50 text-[9px] uppercase" style={{ letterSpacing: "0.25em" }}>Delivery date</label>
-                  <input className="input-ritual mt-1" type="date" value={date} min={tomorrow()} onChange={(e) => setDate(e.target.value)} data-testid="booking-date-input" />
-                </div>
+                {mode === "book" && (
+                  <div className="flex-1">
+                    <label className="text-henna/50 text-[9px] uppercase" style={{ letterSpacing: "0.25em" }}>Delivery date</label>
+                    <input className="input-ritual mt-1" type="date" value={date} min={tomorrow()} onChange={(e) => setDate(e.target.value)} data-testid="booking-date-input" />
+                  </div>
+                )}
               </div>
+              {mode === "reserve" && (
+                <p className="text-henna/70 text-xs leading-5 mt-4 font-serif italic" data-testid="reserve-explainer">
+                  This catch is off-season. Pay 25% now to hold your slot — the moment it lands,
+                  you get first access to complete the booking at today's price.
+                </p>
+              )}
               <div className="flex justify-between items-center mt-6 border-t border-gold/20 pt-4">
-                <p className="text-henna/75 text-sm">Total {discount > 0 && <span className="text-gold-dim">({discount}% off)</span>}</p>
+                <p className="text-henna/75 text-sm">
+                  {mode === "reserve" ? "Pay now · 25% advance" : <>Total {discount > 0 && <span className="text-gold-dim">({discount}% off)</span>}</>}
+                </p>
                 <p className="num-lg text-henna text-2xl" data-testid="booking-total">
-                  {discount > 0 && (
-                    <span className="text-henna/40 line-through text-base mr-2 num">₹{Math.round(selected.price_per_kg * qty).toLocaleString("en-IN")}</span>
+                  {mode === "reserve" ? (
+                    <>
+                      <span className="text-henna/40 text-base mr-2 num">₹{Math.round(selected.price_per_kg * qty).toLocaleString("en-IN")} total</span>
+                      <span className="rupee">₹</span>{Math.max(1, Math.round(selected.price_per_kg * qty * 0.25)).toLocaleString("en-IN")}
+                    </>
+                  ) : (
+                    <>
+                      {discount > 0 && (
+                        <span className="text-henna/40 line-through text-base mr-2 num">₹{Math.round(selected.price_per_kg * qty).toLocaleString("en-IN")}</span>
+                      )}
+                      <span className="rupee">₹</span>{priceFor(selected).toLocaleString("en-IN")}
+                    </>
                   )}
-                  <span className="rupee">₹</span>{priceFor(selected).toLocaleString("en-IN")}
                 </p>
               </div>
-              <button className="btn-henna w-full mt-5" onClick={() => { haptic(); book(selected); }} disabled={busy} data-testid="confirm-book-btn">
-                {busy ? "Speaking to the boat…" : "Confirm & Pay"}
+              <button
+                className={`w-full mt-5 ${mode === "reserve" ? "btn-gold-outline" : "btn-henna"}`}
+                onClick={() => { haptic(); mode === "reserve" ? reserve(selected) : book(selected); }}
+                disabled={busy}
+                data-testid="confirm-book-btn"
+              >
+                {busy ? "Speaking to the boat…" : mode === "reserve" ? `Reserve · Pay ₹${Math.max(1, Math.round(selected.price_per_kg * qty * 0.25)).toLocaleString("en-IN")}` : "Confirm & Pay"}
               </button>
             </motion.div>
           </>

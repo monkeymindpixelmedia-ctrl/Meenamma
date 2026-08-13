@@ -38,10 +38,17 @@ Build a premium, high-end mobile app strictly following the "Temple Gold & Henna
 ## Credentials
 - Admin: admin@meenamma.in / TempleGold@2026 · Demo: demo@meenamma.in / meenamma2026 (see /app/memory/test_credentials.md — includes curl token recipe)
 
+## Implemented (June 2026 — Reservations + Ceremony session)
+- **Off-season Catch Reservations**: unavailable fish → "Off the boat — Reserve with 25%" (Market sheet reserve mode, no date, advance breakdown); POST /api/reservations/create-order (25% advance via Razorpay, guarded: published fish rejected); admin toggling fish back available flips reservations reserved→arrived + queues notification_outbox row (event catch_arrived — email sending itself NOT wired yet, MOCKED as outbox log); user completes on dashboard (date picker + 75% balance) → confirmed order. M13 migration (public.reservations) applied + saved to /app/supabase/migration.
+- **Kudam Gold Shimmer Ceremony**: full-screen henna overlay, 34 falling gold flakes, pulsing gold rings, shimmer-sweep, gradient-animated "The Kudam is full." heading, glowing mandala — triggers when any deposit completes a kudam.
+- Dashboard "Reserved catches · Your place in the queue" section; demo account holds one completed Ooli reservation (₹230 advance → ₹920 confirmed order). Kaala kept off-season as the reservation demo fixture.
+- NOTE: a parallel job added UPI Autopay (Razorpay subscriptions: /api/autopay/subscribe|verify|cancel, simulate-deposit, autopay UI) — untested here (needs real UPI mandate).
+- Tested: iteration_4 — 12/12 backend, 100% frontend (reserve sheet, dashboard section, celebration overlay).
+
 ## Backlog
+- P1: Real email sending for catch-arrived + booking alerts (notification_outbox is queued; plug Resend/SendGrid worker — user chose "mail", riders/delivery later)
 - P1: Delivery slot picker (6 AM / 7 AM) on booking sheet
 - P1: Razorpay webhook endpoint (payment_webhook_events table already exists in schema)
-- P2: Kudam completion gold-shimmer ceremony polish; redeem kudam balance against a booking
-- P2: Email/WhatsApp notifications on booking confirmed/ready (notification_outbox table exists)
+- P2: Redeem kudam balance against a booking
 - P3: Tamil/English bilingual toggle (locale column + display_ta jsonb already in schema)
 - Cosmetic: React Router v7 future-flag console warnings

@@ -49,9 +49,9 @@ function loadRazorpayScript() {
   return rzpScriptPromise;
 }
 
-export async function payWithRazorpay(orderPayload, user) {
+export async function payWithRazorpay(orderPayload, user, endpoint = "/payments/create-order") {
   await loadRazorpayScript();
-  const { data: order } = await api.post("/payments/create-order", orderPayload);
+  const { data: order } = await api.post(endpoint, orderPayload);
   return new Promise((resolve, reject) => {
     const rzp = new window.Razorpay({
       key: order.key_id,
@@ -60,7 +60,11 @@ export async function payWithRazorpay(orderPayload, user) {
       order_id: order.order_id,
       name: "Meenamma",
       description:
-        orderPayload.purpose === "deposit" ? "Kudam Deposit" : "Catch Pre-booking",
+        orderPayload.purpose === "deposit"
+          ? "Kudam Deposit"
+          : orderPayload.purpose === "booking"
+          ? "Catch Pre-booking"
+          : "Reserved Catch",
       prefill: { name: user?.name || "", email: user?.email || "" },
       theme: { color: "#4A1C17" },
       handler: async (res) => {

@@ -327,6 +327,51 @@ def verify_signature(body: VerifyIn):
 @api.post("/payments/verify")
 def verify_payment(body: VerifyIn, user: dict = Depends(get_current_user)):
     uid = user["id"]
+    ra = (sb.table("reservations").select("*")
+          .eq("advance_razorpay_order_id", body.razorpay_order_id).eq("profile_id", uid).execute().data)
+    if ra:
+        r = ra[0]
+        if r["status"] != "pending_advance":
+            return {"ok": True, "already_processed": True}
+        verify_signature(body)
+        sb.table("reservations").update({"status": "reserved",
+                                         "advance_payment_id": body.razorpay_payment_id}) \
+            .eq("id", r["id"]).execute()
+        return {"ok": True, "purpose": "reservation", "reservation_status": "reserved"}
+
+    rb = (sb.table("reservations").select("*, products(*)")
+          .eq("balance_razorpay_order_id", body.razorpay_order_id).eq("profile_id", uid).execute().data)
+    if rb:
+        r = rb[0]
+        if r["status"] == "completed":
+            return {"ok": True, "already_processed": True}
+        verify_signature(body)
+        prod = r.get("products") or {}
+        disp = prod.get("display_en") or {}
+        order = sb.table("orders").insert({
+            "public_reference": f"MNM-{uuid.uuid4().hex[:8].upper()}",
+            "profile_id": uid, "status": "confirmed",
+            "subtotal_paise": r["total_paise"], "total_paise": r["total_paise"],
+            "paid_at": now_utc().isoformat(), "confirmed_at": now_utc().isoformat(),
+            "address_snapshot": {"pincode": user.get("pincode") or ""},
+            "delivery_slot_snapshot": {"delivery_date": str(r.get("delivery_date") or ""), "window": "6:00 AM"},
+            "policy_snapshot": {"reservation_id": r["id"], "advance_paise": r["advance_paise"],
+                                "discount_percent": 0},
+        }).execute().data[0]
+        sb.table("order_items").insert({
+            "order_id": order["id"], "product_id": r["product_id"],
+            "species_id": prod.get("species_id"), "cut_id": prod.get("cut_id"),
+            "item_snapshot": {"name": disp.get("name", ""), "tamil_name": disp.get("tamil_name", ""),
+                              "price_per_kg": round((prod.get("base_price_paise") or 0) / 100)},
+            "quantity": 1, "net_weight_grams": r["qty_grams"],
+            "unit_price_paise": prod.get("base_price_paise") or 0,
+            "line_total_paise": r["total_paise"]}).execute()
+        sb.table("reservations").update({"status": "completed", "completed_at": now_utc().isoformat(),
+                                         "balance_payment_id": body.razorpay_payment_id,
+                                         "order_id": order["id"]}).eq("id", r["id"]).execute()
+        full = sb.table("orders").select("*, order_items(*)").eq("id", order["id"]).execute().data[0]
+        return {"ok": True, "purpose": "reservation_complete", "booking": booking_out(full)}
+
     ka = (sb.table("kudam_payment_attempts").select("*")
           .eq("razorpay_order_id", body.razorpay_order_id).eq("profile_id", uid).execute().data)
     if ka:
@@ -423,6 +468,101 @@ def autopay_cancel(user: dict = Depends(get_current_user)):
     return user_public(p)
 
 
+# ---------- Reservations (off-season catch, 25% advance) ----------
+def reservation_out(r: dict) -> dict:
+    prod = r.get("products") or {}
+    disp = prod.get("display_en") or {}
+    media = prod.get("media") or []
+    return {"id": r["id"], "product_id": r["product_id"], "product_name": disp.get("name", ""),
+            "tamil_name": disp.get("tamil_name", ""),
+            "image": media[0].get("url", "") if media else "",
+            "qty_kg": r["qty_grams"] / 1000, "total": round(r["total_paise"] / 100),
+            "advance_paid": round(r["advance_paise"] / 100),
+            "balance_due": round((r["total_paise"] - r["advance_paise"]) / 100),
+            "status": r["status"], "delivery_date": r.get("delivery_date"),
+            "created_at": r["created_at"]}
+
+
+class ReservationIn(BaseModel):
+    product_id: str
+    qty_kg: float = Field(gt=0)
+
+
+class ReservationCompleteIn(BaseModel):
+    pickup_date: str
+
+
+@api.get("/reservations")
+def list_reservations(user: dict = Depends(get_current_user)):
+    rows = (sb.table("reservations").select("*, products(display_en, media)")
+            .eq("profile_id", user["id"]).neq("status", "pending_advance")
+            .order("created_at", desc=True).execute().data)
+    return [reservation_out(r) for r in rows]
+
+
+@api.post("/reservations/create-order")
+def reservation_create_order(body: ReservationIn, user: dict = Depends(get_current_user)):
+    prows = sb.table("products").select("*").eq("id", body.product_id).neq("status", "archived").execute().data
+    if not prows:
+        raise HTTPException(status_code=404, detail="Product not found")
+    prod = prows[0]
+    if prod["status"] == "published":
+        raise HTTPException(status_code=400, detail="This catch is in season — pre-book it instead")
+    total_paise = round(prod["base_price_paise"] * body.qty_kg)
+    advance_paise = max(100, round(total_paise * 0.25))
+    try:
+        rzp_order = rzp.order.create({"amount": advance_paise, "currency": "INR", "payment_capture": 1})
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Razorpay order failed: {e}")
+    sb.table("reservations").insert({
+        "profile_id": user["id"], "product_id": prod["id"], "qty_grams": int(body.qty_kg * 1000),
+        "total_paise": total_paise, "advance_paise": advance_paise,
+        "advance_razorpay_order_id": rzp_order["id"]}).execute()
+    return {"order_id": rzp_order["id"], "amount": advance_paise, "currency": "INR",
+            "key_id": os.environ["RAZORPAY_KEY_ID"], "discount_percent": 0}
+
+
+@api.post("/reservations/{reservation_id}/complete-order")
+def reservation_complete_order(reservation_id: str, body: ReservationCompleteIn,
+                               user: dict = Depends(get_current_user)):
+    rows = sb.table("reservations").select("*").eq("id", reservation_id) \
+        .eq("profile_id", user["id"]).execute().data
+    if not rows:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+    r = rows[0]
+    if r["status"] != "arrived":
+        raise HTTPException(status_code=400, detail="The catch has not landed yet")
+    balance = r["total_paise"] - r["advance_paise"]
+    try:
+        rzp_order = rzp.order.create({"amount": balance, "currency": "INR", "payment_capture": 1})
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Razorpay order failed: {e}")
+    sb.table("reservations").update({"balance_razorpay_order_id": rzp_order["id"],
+                                     "delivery_date": body.pickup_date}).eq("id", r["id"]).execute()
+    return {"order_id": rzp_order["id"], "amount": balance, "currency": "INR",
+            "key_id": os.environ["RAZORPAY_KEY_ID"], "discount_percent": 0}
+
+
+def notify_catch_arrived(prod: dict):
+    disp = prod.get("display_en") or {}
+    res = (sb.table("reservations").select("*, profiles(email, display_name)")
+           .eq("product_id", prod["id"]).eq("status", "reserved").execute().data)
+    for r in res:
+        sb.table("reservations").update({"status": "arrived", "arrived_at": now_utc().isoformat()}) \
+            .eq("id", r["id"]).execute()
+        prof = r.get("profiles") or {}
+        try:
+            sb.table("notification_outbox").insert({
+                "aggregate_type": "reservation", "aggregate_id": r["id"],
+                "event_key": "catch_arrived",
+                "idempotency_key": f"reservation:{r['id']}:arrived",
+                "payload": {"email": prof.get("email"), "name": prof.get("display_name"),
+                            "product": disp.get("name"), "tamil_name": disp.get("tamil_name"),
+                            "message": f"{disp.get('name')} has landed. Complete your booking to claim your reserved catch."}}).execute()
+        except Exception:
+            pass
+
+
 # ---------- Live stats (public) ----------
 @api.get("/stats/live")
 def stats_live():
@@ -495,9 +635,15 @@ def admin_create_product(body: ProductIn, admin: dict = Depends(get_admin_user))
 
 @api.put("/admin/products/{product_id}")
 def admin_update_product(product_id: str, body: ProductIn, admin: dict = Depends(get_admin_user)):
+    old = sb.table("products").select("status").eq("id", product_id).execute().data
+    if not old:
+        raise HTTPException(status_code=404, detail="Product not found")
+    was_available = old[0]["status"] == "published"
     rows = sb.table("products").update(product_row(body)).eq("id", product_id).execute().data
     if not rows:
         raise HTTPException(status_code=404, detail="Product not found")
+    if not was_available and body.available:
+        notify_catch_arrived(rows[0])
     return product_out(rows[0])
 
 

@@ -1,0 +1,26 @@
+{
+  "summary": "Verified new Off-season Catch Reservations feature (backend + frontend) and Kudam Celebration gold-shimmer overlay. Backend: 12/12 pytest cases pass in /app/backend/tests/test_reservations.py — reservation create-order for Kaala returns 25% advance (₹23800 paise for 1kg of ₹950), reservations list excludes pending_advance rows, demo user's completed Ooli reservation appears (advance ₹230, total ₹920) with corresponding confirmed Ooli order in /api/bookings, /api/payments/verify with fake signature returns 400, complete-order on a completed reservation returns 400 'The catch has not landed yet', admin PUT toggling published→draft→published on a product with no reserved reservations returns 200 (arrival trigger no-op works). Regression: stats/live, /products (Kaala unavailable + 14 published = 15), kudam deposit create-order all still 200. Frontend: /market shows gold-outline 'OFF THE BOAT — RESERVE WITH 25%' for Kaala (btn-gold-outline class), sheet opens with reserve-explainer, correct ₹950 total / ₹238 advance breakdown, 'Reserve · Pay ₹238' button, no date input in reserve mode. Vanjaram shows regular 'Pre-Book' with date input in book mode and no reserve-explainer. Demo dashboard shows reservations-section with Ooli card '2 kg · ₹920 total · ₹230 ADVANCE PAID · Completed — it sits among your orders.' Celebration flow: created CELEB_Test kudam with goal ₹5, clicked simulate-deposit-btn, full-screen kudam-celebration overlay appeared with 'The Kudam is full.' heading (gold-shimmer gradient), 20% feast discount copy, gold flakes/rings animations visible, 'CLAIM THE FEAST' close button dismisses the overlay correctly.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_reservations.py",
+    "/app/backend/tests/test_supabase_api.py",
+    "/app/test_reports/pytest/reservations_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py has grown to 762 lines — past the 700-line threshold flagged in iteration_3. Recommend splitting into modules (payments.py, reservations.py, admin.py, kudams.py) before next feature.",
+    "reservation_create_order does not currently enforce that the target product is off-season (available=False / status!='published'). A user could POST /api/reservations/create-order with a published product id and pay 25% advance for a normally-available fish. Consider guarding with `if prod['status'] == 'published': raise 400` (or checking a dedicated flag) so 'reserve' remains reserved for off-season catches only.",
+    "notify_catch_arrived() swallows all notification_outbox insert exceptions silently — if the table shape changes we'd never notice. Consider logging at warning level.",
+    "reservation_out returns delivery_date as-is (possibly None) — Frontend depends on r.status transitions; safe for now, but if you ever return raw Postgres dates in older shapes some serialization edge cases could bite.",
+    "Kudam celebration triggers on setCelebrate(name) only if the payment-verify or simulate-deposit response contains kudam.status == 'complete'. If a race causes the kudam to be marked 'redeemed' before dashboard receives the response, celebration will not fire. Low-risk given today's flow but worth noting."
+  ],
+  "updated_files": ["/app/backend/tests/test_reservations.py (new)"],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% (Market reserve/book modes, Dashboard reservations section with completed Ooli, full Kudam Celebration overlay + close all verified)"},
+  "test_credentials": "demo@meenamma.in / meenamma2026 and admin@meenamma.in / TempleGold@2026 — verified via Supabase GoTrue password grant",
+  "seed_data_creation": "Created one CELEB_Test_* kudam (goal ₹5, completed via simulate-deposit) under demo user. Created 2 pending_advance Kaala reservations for demo user via /api/reservations/create-order (they remain hidden from GET /api/reservations because the list filters status != 'pending_advance'). No cleanup necessary — they are inert.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New backend test file /app/backend/tests/test_reservations.py covers reservation lifecycle + regression. Run alongside /app/backend/tests/test_supabase_api.py. Kaala is the only off-season product (status=draft/available=false) with price_per_kg=950 — used as the reservation fixture. Demo user has one COMPLETED Ooli reservation (2kg, ₹920, ₹230 advance) and one confirmed Ooli order (₹920). Autopay endpoints exist but were NOT tested per main agent request (require real UPI mandate). To trigger the celebration in UI: new-kudam-btn → set goal to daily_plan (5) → simulate-deposit-btn.",
+  "rca_of_the_issue": "N/A — feature verification, no bug reproduced."
+}
