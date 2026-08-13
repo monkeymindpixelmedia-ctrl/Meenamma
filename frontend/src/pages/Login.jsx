@@ -32,7 +32,7 @@ export default function Login() {
       await login(em, pw);
       navigate("/dashboard");
     } catch (err) {
-      setError(formatApiErrorDetail(err.response?.data?.detail) || err.message);
+      setError(formatApiErrorDetail(err.response?.data?.detail) || err.message || "Something went wrong. Please try again.");
     } finally {
       setBusy(false);
     }

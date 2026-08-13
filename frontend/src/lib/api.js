@@ -1,8 +1,16 @@
 import axios from "axios";
+import { supabase } from "./supabase";
 
 export const api = axios.create({
   baseURL: `${process.env.REACT_APP_BACKEND_URL}/api`,
-  withCredentials: true,
+});
+
+api.interceptors.request.use(async (config) => {
+  const { data } = await supabase.auth.getSession();
+  if (data.session?.access_token) {
+    config.headers.Authorization = `Bearer ${data.session.access_token}`;
+  }
+  return config;
 });
 
 export const imgUrl = (p) =>
@@ -15,7 +23,7 @@ export const haptic = () => {
 };
 
 export function formatApiErrorDetail(detail) {
-  if (detail == null) return "Something went wrong. Please try again.";
+  if (detail == null) return "";
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail))
     return detail
@@ -68,6 +76,35 @@ export async function payWithRazorpay(orderPayload, user) {
         }
       },
       modal: { ondismiss: () => reject(new Error("Payment cancelled")) },
+    });
+    rzp.open();
+  });
+}
+
+export async function setupAutopay(user) {
+  await loadRazorpayScript();
+  const { data: sub } = await api.post("/autopay/subscribe");
+  return new Promise((resolve, reject) => {
+    const rzp = new window.Razorpay({
+      key: sub.key_id,
+      subscription_id: sub.subscription_id,
+      name: "Meenamma",
+      description: `UPI Autopay · ₹${sub.amount}/day (billed ₹${sub.weekly_amount}/week)`,
+      prefill: { name: user?.name || "", email: user?.email || "" },
+      theme: { color: "#4A1C17" },
+      handler: async (res) => {
+        try {
+          const { data } = await api.post("/autopay/verify", {
+            razorpay_payment_id: res.razorpay_payment_id,
+            razorpay_subscription_id: res.razorpay_subscription_id,
+            razorpay_signature: res.razorpay_signature,
+          });
+          resolve(data);
+        } catch (e) {
+          reject(new Error(formatApiErrorDetail(e.response?.data?.detail)));
+        }
+      },
+      modal: { ondismiss: () => reject(new Error("Autopay setup cancelled")) },
     });
     rzp.open();
   });

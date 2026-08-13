@@ -1,39 +1,47 @@
 # Meenamma — PRD
 
 ## Original Problem Statement
-Build a premium, high-end mobile app strictly following the "Temple Gold & Henna" aesthetic (Deep Henna #4A1C17, Temple Gold #C5A059, Sandalwood #F4EBD0; Cormorant Garamond + Montserrat). Implement the Savings Mandala widget exactly as provided (smooth 60fps), Anti-Slop Protocol (no generic Material defaults), a "Ritual" splash screen with editorial feel, and the provided Design DNA. Meenamma = premium seafood pre-booking + micro-savings (Kudam cycles).
+Build a premium, high-end mobile app strictly following the "Temple Gold & Henna" aesthetic (Deep Henna #4A1C17, Temple Gold #C5A059, Sandalwood #F4EBD0; Cormorant Garamond + Montserrat). Savings Mandala widget (60fps), Anti-Slop Protocol, "Ritual" splash. Meenamma = premium seafood pre-booking + micro-savings (Kudam cycles).
 
 ## User Choices
-- Mobile-first React web app (not Flutter/Next.js — env constraint accepted by user)
-- Full scope: Splash → Landing → Sovereign Dashboard → Artisan Storefront
-- Razorpay TEST keys provided by user (rzp_test_TP3j9GPluzWOLf)
-- Auth: user asked Better Auth → not feasible (Node-only); user approved JWT email/password (bcrypt + httpOnly cookies)
+- Mobile-first React web app; full scope Splash → Landing → Dashboard → Storefront
+- Razorpay TEST keys (rzp_test_TP3j9GPluzWOLf)
+- **June 2026 pivot (user-mandated): FULL migration MongoDB+custom JWT → Supabase (Auth + PostgreSQL). MongoDB is DEAD.**
+- Landing overhaul: Narrative Scroll Journey + Live Catch Dashboard with REAL computed stats; 15 seeded products
 - Tamil/English toggle: deferred
 
-## Architecture
-- Frontend: React 18 (CRA) + Tailwind (custom tokens) + Framer Motion + lucide-react, mobile shell max-w-md
-- Backend: FastAPI single server.py — auth, kudams, products, bookings, Razorpay payments
-- DB: MongoDB (users, kudams, deposits, products, bookings, transactions, login_attempts)
-- Payments: Razorpay checkout.js on frontend; create-order + signature verify on backend
+## Architecture (current)
+- Frontend: React 18 (CRA) + Tailwind + Framer Motion + supabase-js 2.49.4
+  - Auth in browser via supabase-js (signInWithPassword/signUp); axios interceptor (lib/api.js) attaches `Authorization: Bearer <supabase access_token>` on all /api calls
+- Backend: FastAPI single server.py — verifies Supabase JWT locally (ES256 via JWKS, HS256 fallback via auth.get_user); all data via supabase-py (service role key, bypasses RLS); PostgREST session hardened (keepalive_expiry=15s, transport retries=2)
+- DB: Supabase Postgres project sejfusqyxtmejbwppexe. Schema M1–M12 in /app/supabase/migration (M12 = kudams/kudam_deposits/kudam_payment_attempts + profile app fields, applied via Management API)
+  - profiles (display_name, daily_plan, pincode, upi_id; trigger auto-creates on auth signup)
+  - products (display_en jsonb holds name/tamil_name/origin/story/handling; media jsonb; status published/draft/archived ↔ available toggle; species+cuts FKs auto-managed)
+  - bookings = orders + order_items + payment_attempts + payments (order snapshots immutable after draft; statuses: pending_payment→confirmed→ready→delivered/cancelled)
+  - savings = kudams (goal_paise/saved_paise) + kudam_deposits + kudam_payment_attempts
+  - admin role = staff_role_assignments role=ops_admin
+- Migrations/DDL: apply via Supabase Management API `POST /v1/projects/sejfusqyxtmejbwppexe/database/query` with the user's sbp_ token (user provided; DDL blocked over PostgREST)
+- Seed: /app/backend/seed.py (idempotent — admin+demo users, ops_admin role, demo kudam, 15 products)
 
-## Implemented (June 2026)
-- Ritual splash, light Minimal Temple theme (#FAF5E6 bg, henna text, white cards, gold borders), responsive editorial masonry (3-col desktop / edge-to-edge mobile with sticky bottom nav + FAB)
-- Dual-mode dashboard: Daily Kudam (plan ₹1/5/10, Pay-₹X-today, quick deposits, completion celebration + 20% feast discount reward) vs Fresh Catch (masonry market, slide-up booking sheet, server-computed prices w/ discount redemption)
-- JWT auth (bcrypt, httpOnly cookies, brute-force lockout w/ X-Forwarded-For); 3-step signup ritual (details+PIN serviceability → plan selection → simulated UPI connect → welcome screen); pincode/upi_id persisted
-- Quick Demo logins on /login: demo user (demo@meenamma.in/meenamma2026, seeded w/ 66% Sunday Feast kudam) + Store Admin; password visibility toggle
-- Profile page /profile (edit name/plan/pincode/UPI via PATCH /api/me)
-- Premium numerals: Bodoni Moda (large), Playfair Display tabular (small), gold ₹; contrast pass
-- Store Manager admin /admin: stats, product CRUD with image upload (POST /api/admin/upload → /api/uploads/*), availability toggle switch, order status workflow, kudams, customers
-- Success toast on deposits; empty-orders CTA; haptic feedback
+## Implemented (June 2026 — Supabase migration session)
+- Full backend rewrite to Supabase (auth/me, PATCH /me, kudams CRUD+deposits, rewards, products, bookings, Razorpay create-order/verify for deposits & bookings, admin stats/products CRUD/bookings/kudams/users/upload, GET /api/stats/live)
+- Frontend: AuthContext on supabase-js sessions; Login/Register wired to GoTrue; session persistence + logout; Admin statuses → confirmed/ready/delivered/cancelled
+- Landing overhaul: cinematic AI-editorial hero (Kasimedu dawn boats), Live Catch Dashboard (6 animated real counters from /api/stats/live), 4-chapter Narrative Scroll Journey, Two Paths, footer
+- 15 products seeded (6 original Unsplash + 9 AI editorial photos); fixture/duplicate products archived
+- mailer_autoconfirm enabled on Supabase (no email confirmation needed)
+- Quick Demo buttons (demo + admin autofill) preserved and working
 
 ## Testing
-- iteration_1: dark MVP (fixed brute-force proxy IP); iteration_2 (redesign): 22/22 backend + all frontend; iteration_3 (polish): found register pincode persistence bug → FIXED; login-verification run: 27/27 backend, 100% frontend all login paths, session persistence, mobile
-- 'Login not working' report: not reproducible after fixes (stale lockouts cleared + register persistence); all paths verified by testing agent
+- iteration_1..3 (old Mongo era): obsolete
+- iteration_3 (Supabase era, June 2026): 27/27 backend pytest (/app/backend/tests/test_supabase_api.py), 100% frontend (login, register ritual, dashboard kudam create + persistence, market 15 products, admin all tabs, session reload, logout). Transient PostgREST disconnect fixed post-test (keepalive/retry).
 
 ## Credentials
-- Admin: admin@meenamma.in / TempleGold@2026 (see /app/memory/test_credentials.md)
+- Admin: admin@meenamma.in / TempleGold@2026 · Demo: demo@meenamma.in / meenamma2026 (see /app/memory/test_credentials.md — includes curl token recipe)
 
 ## Backlog
-- P0: Razorpay webhook endpoint for out-of-band payment confirmation
-- P1: Tamil/English bilingual toggle; kudam completion celebration animation; redeem kudam balance against a booking
-- P2: Booking pickup reminders; admin catch management; deposit history timeline on dashboard; Mongo transactions for deposit writes
+- P1: Delivery slot picker (6 AM / 7 AM) on booking sheet
+- P1: Razorpay webhook endpoint (payment_webhook_events table already exists in schema)
+- P2: Kudam completion gold-shimmer ceremony polish; redeem kudam balance against a booking
+- P2: Email/WhatsApp notifications on booking confirmed/ready (notification_outbox table exists)
+- P3: Tamil/English bilingual toggle (locale column + display_ta jsonb already in schema)
+- Cosmetic: React Router v7 future-flag console warnings

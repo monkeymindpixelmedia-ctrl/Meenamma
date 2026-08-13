@@ -57,7 +57,7 @@ export default function Register() {
       setWelcome(true);
       setTimeout(() => navigate("/dashboard"), 2400);
     } catch (err) {
-      setError(formatApiErrorDetail(err.response?.data?.detail) || err.message);
+      setError(formatApiErrorDetail(err.response?.data?.detail) || err.message || "Something went wrong. Please try again.");
       setStep(1);
     } finally {
       setBusy(false);

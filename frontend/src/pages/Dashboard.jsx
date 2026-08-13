@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Plus } from "lucide-react";
 import { SavingsMandala } from "../components/SavingsMandala";
 import { useAuth } from "../context/AuthContext";
-import { api, payWithRazorpay, formatApiErrorDetail, imgUrl, haptic } from "../lib/api";
+import { api, payWithRazorpay, setupAutopay, formatApiErrorDetail, imgUrl, haptic } from "../lib/api";
 
 const QUICK = [100, 250, 500, 1000];
 
@@ -67,7 +67,7 @@ function Celebration({ kudamName, onClose }) {
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const navigate = useNavigate();
   const [kudams, setKudams] = useState(null);
   const [activeId, setActiveId] = useState(null);
@@ -135,6 +135,38 @@ export default function Dashboard() {
     }
   };
 
+  const simulateToday = async () => {
+    if (!active) return;
+    haptic();
+    setBusy(true);
+    setMsg("");
+    try {
+      const { data } = await api.post(`/kudams/${active.id}/simulate-deposit`, {});
+      if (data.kudam && data.kudam.status === "complete") setCelebrate(data.kudam.name);
+      else setSuccess(`₹${plan} poured into ${active.name} (simulated day).`);
+      await load();
+    } catch (err) {
+      setMsg(formatApiErrorDetail(err.response?.data?.detail) || err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const enableAutopay = async () => {
+    haptic();
+    setBusy(true);
+    setMsg("");
+    try {
+      const updated = await setupAutopay(user);
+      updateUser(updated);
+      setSuccess(`UPI Autopay active — ₹${plan} flows in every dawn.`);
+    } catch (err) {
+      setMsg(err.message || "Autopay setup failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-sandalwood-paper paper-texture pb-28 md:pb-16" data-testid="dashboard-page">
       <AnimatePresence>
@@ -191,6 +223,15 @@ export default function Dashboard() {
                     <button className="btn-henna w-full md:w-auto mt-4 hidden md:inline-block" onClick={() => deposit(plan)} disabled={busy} data-testid="pay-daily-btn">
                       {busy ? "Opening the till…" : `Pay ₹${plan} today`}
                     </button>
+                    <button
+                      className="w-full md:w-auto mt-3 md:ml-3 py-3 px-5 border border-gold/40 text-henna/70 text-[10px] uppercase hover:bg-gold/10 transition-colors duration-300"
+                      style={{ letterSpacing: "0.2em" }}
+                      onClick={simulateToday}
+                      disabled={busy}
+                      data-testid="simulate-deposit-btn"
+                    >
+                      Simulate today's ₹{plan} (demo)
+                    </button>
                     <div className="flex flex-wrap gap-2 mt-5">
                       {QUICK.map((q) => (
                         <button
@@ -224,6 +265,27 @@ export default function Dashboard() {
 
             {/* Right column: vessels + rewards */}
             <aside className="space-y-6">
+              <div className="card-white p-6" data-testid="autopay-card">
+                <p className="text-gold-dim text-[10px] uppercase mb-3" style={{ letterSpacing: "0.35em" }}>UPI Autopay</p>
+                {user?.autopay_status === "active" ? (
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gold opacity-70" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-gold" />
+                    </span>
+                    <p className="text-henna text-sm" data-testid="autopay-active-label">Active — ₹{plan} flows in daily at dawn.</p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-henna/75 text-xs leading-5">
+                      Set a one-time UPI mandate and ₹{plan} pours into your kudam every day — no taps needed.
+                    </p>
+                    <button className="btn-gold-outline w-full mt-4 !py-2.5" onClick={enableAutopay} disabled={busy} data-testid="enable-autopay-btn">
+                      Enable Autopay ₹{plan}/day
+                    </button>
+                  </>
+                )}
+              </div>
               <div className="card-white p-6">
                 <div className="flex items-center justify-between mb-4">
                   <p className="text-gold-dim text-[10px] uppercase" style={{ letterSpacing: "0.35em" }}>Your vessels</p>

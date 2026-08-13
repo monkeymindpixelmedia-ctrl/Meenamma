@@ -1,0 +1,44 @@
+{
+  "summary": "Post-Supabase-migration verification for Meenamma. Backend: 27/27 pytest tests pass on retry (1 transient Supabase 'Server disconnected' on admin_stats when run in sequence with other tests — passes reliably in isolation). All Supabase auth (Bearer JWT via GoTrue), profiles, kudams, products (15 seeded), stats/live (catches_live=15, saved=₹340), bookings, payments create-order (deposit + server-side booking amount), payments verify rejection with fake signature, admin CRUD (products create/update/archive), admin stats/bookings/kudams/users, and admin upload (image + txt reject + non-admin 403) all validated. Frontend: Landing renders cinematic hero, Live Catch Dashboard with real values (15, ₹340), Narrative Journey chapters, no broken images. Demo login lands on /dashboard showing Sunday Feast 68% (₹340/500); new kudam creation persists to Supabase and appears immediately; session persists after reload; /market shows 15 products with tamil names + Pre-Book buttons; Admin quick-login lands on /admin with all overview stats (5 customers, 15 products, ₹340 in kudams) and all 5 tabs (Overview/Products/Orders/Kudams/Customers) visible.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/stats", "issue": "Intermittent httpx.RemoteProtocolError 'Server disconnected' from Supabase PostgREST when called after other admin queries in the same test module. Passes reliably on retry / isolation. Consider adding a retry wrapper around sb.table(...).execute() or reusing a keep-alive httpx client to avoid PostgREST connection resets."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Header (Dashboard/Admin/Market)", "issues": ["The small tamil script glyph rendered next to 'MEENAMMA' logo appears garbled / boxes on non-landing pages (font fallback issue). Landing header renders 'மீனம்மா' correctly — likely a missing font-face import on the app shell layout. Cosmetic."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_supabase_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Add retry / persistent httpx client for Supabase PostgREST calls to eliminate transient 'Server disconnected' on /api/admin/stats.",
+    "Ensure Noto Sans Tamil (or equivalent) font is loaded on the authenticated layout so the small tamil glyph in the header renders correctly on Dashboard/Market/Admin.",
+    "Cosmetic: React Router v6 future-flag warnings still present in console (v7_startTransition, v7_relativeSplatPath)."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 611 lines — still manageable but approaching the 700-line threshold; consider splitting into modules (auth.py, kudams.py, payments.py, admin.py).",
+    "decode_token() falls back to sb.auth.get_user(token) for HS256 legacy tokens on every request — this is a network call. Fine for now but adds latency; JWKS ES256 path is fast.",
+    "CORS uses allow_origin_regex=r'https?://.*' with allow_credentials=True — this is essentially 'allow all origins with credentials'. For production, tighten to the actual preview + prod domains.",
+    "apply_kudam_deposit() reads then writes to kudams with no transaction/optimistic-lock; concurrent deposits could race and lose an increment. Consider using a Postgres function/RPC for atomic increment.",
+    "product_out returns only media[0].url — no fallback if media has objects without 'url' key; guarded already but consider a default placeholder image.",
+    "No pagination on /admin/bookings, /admin/kudams, /admin/users (limit 500) — will break UX past that many rows.",
+    "Payment verify path (line 320) not shown here but must strictly enforce razorpay signature — kept in scope as verified via fake-signature test (returns 400)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_supabase_api.py (new — replaces obsolete /app/backend/tests/test_meenamma_api.py which was written for the removed Mongo/JWT era)"
+  ],
+  "success_rate": {"backend": "100% (27/27 after retry; 26/27 on cold sequential run due to 1 transient Supabase disconnect)", "frontend": "100% (landing, login, dashboard incl. kudam create + reload persistence, market, admin all verified)"},
+  "test_credentials": "demo@meenamma.in / meenamma2026 and admin@meenamma.in / TempleGold@2026 — both confirmed working against Supabase Auth.",
+  "seed_data_creation": "Created one TEST_ kudam and one UITest_<timestamp> kudam under demo user (harmless, prefixed for identification). Created + archived one TEST_Fish_* product via admin CRUD test (already cleaned up via DELETE). Demo user's display_name is briefly changed then restored during PATCH /me persistence test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Old backend test file test_meenamma_api.py was removed — it was Mongo-era and would fail against every endpoint. New test file: /app/backend/tests/test_supabase_api.py. It obtains Supabase tokens directly via POST {SUPABASE_URL}/auth/v1/token?grant_type=password using REACT_APP_SUPABASE_ANON_KEY. Do NOT try to POST /api/auth/login — endpoint doesn't exist. Working data-testids observed: live-catch-dashboard, narrative-journey, demo-user-btn, demo-admin-btn, login-submit-btn, new-kudam-btn, kudam-name-input, kudam-goal-input, kudam-create-submit, profile-logout-btn. Order statuses in DB are now the Postgres enum (paid/confirmed/packing/ready/out_for_delivery/delivered/cancelled).",
+  "rca_of_the_issue": "N/A — no user-reported bug; this iteration verified the Supabase migration. Only quirk found: transient Supabase PostgREST connection reset on one admin endpoint under load — action item captured above."
+}

@@ -2,111 +2,239 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
-import jwt
-import bcrypt
+import re
+import uuid
+import hashlib
+import jwt as pyjwt
 import razorpay
 from datetime import datetime, timezone, timedelta
-from typing import Optional, List, Annotated
-from bson import ObjectId
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, UploadFile, File
+from typing import Optional
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-import uuid
-from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, Field, EmailStr, BeforeValidator
+from jwt import PyJWKClient
+from pydantic import BaseModel, Field
+from supabase import create_client
 
-mongo_client = AsyncIOMotorClient(os.environ["MONGO_URL"])
-db = mongo_client[os.environ["DB_NAME"]]
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+sb = create_client(SUPABASE_URL, os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+import httpx as _httpx
+_old = sb.postgrest.session
+sb.postgrest.session = _httpx.Client(
+    base_url=_old.base_url, headers=_old.headers, timeout=_old.timeout,
+    limits=_httpx.Limits(max_connections=20, max_keepalive_connections=10, keepalive_expiry=15),
+    transport=_httpx.HTTPTransport(retries=2),
+)
+JWKS = PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json", cache_keys=True)
+ISSUER = f"{SUPABASE_URL}/auth/v1"
 
 rzp = razorpay.Client(auth=(os.environ["RAZORPAY_KEY_ID"], os.environ["RAZORPAY_KEY_SECRET"]))
 
-JWT_ALGORITHM = "HS256"
-JWT_SECRET = os.environ["JWT_SECRET"]
-
 app = FastAPI(title="Meenamma API")
 api = APIRouter(prefix="/api")
-
-PyObjectId = Annotated[str, BeforeValidator(str)]
 
 
 def now_utc():
     return datetime.now(timezone.utc)
 
 
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+def slugify(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-") or "item"
 
 
-def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+# ---------- Auth ----------
+def decode_token(token: str) -> dict:
+    header = pyjwt.get_unverified_header(token)
+    if header.get("alg") == "HS256":
+        res = sb.auth.get_user(token)
+        if not res or not res.user:
+            raise pyjwt.InvalidTokenError("invalid session")
+        return {"sub": res.user.id, "email": res.user.email}
+    key = JWKS.get_signing_key_from_jwt(token)
+    return pyjwt.decode(token, key.key, algorithms=["ES256", "RS256"],
+                        audience="authenticated", issuer=ISSUER)
 
 
-def create_access_token(user_id: str, email: str) -> str:
-    payload = {"sub": user_id, "email": email, "exp": now_utc() + timedelta(minutes=60), "type": "access"}
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-
-def create_refresh_token(user_id: str) -> str:
-    payload = {"sub": user_id, "exp": now_utc() + timedelta(days=7), "type": "refresh"}
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-
-def set_auth_cookies(response: Response, access: str, refresh: str):
-    response.set_cookie("access_token", access, httponly=True, secure=True, samesite="none", max_age=3600, path="/")
-    response.set_cookie("refresh_token", refresh, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
-
-
-def user_public(doc: dict) -> dict:
-    return {"id": str(doc["_id"]), "email": doc["email"], "name": doc.get("name", ""),
-            "role": doc.get("role", "user"), "daily_plan": doc.get("daily_plan", 5),
-            "pincode": doc.get("pincode", ""), "upi_id": doc.get("upi_id", "")}
-
-
-async def get_current_user(request: Request) -> dict:
-    token = request.cookies.get("access_token")
-    if not token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-    if not token:
+def get_current_user(request: Request) -> dict:
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        if payload.get("type") != "access":
-            raise HTTPException(status_code=401, detail="Invalid token type")
-        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        return user
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        claims = decode_token(auth[7:])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    rows = (sb.table("profiles")
+            .select("*, staff_role_assignments!profile_id(role, revoked_at)")
+            .eq("id", claims["sub"]).execute().data)
+    if not rows:
+        raise HTTPException(status_code=401, detail="Profile not found")
+    p = rows[0]
+    roles = [r["role"] for r in (p.get("staff_role_assignments") or []) if not r.get("revoked_at")]
+    p["_role"] = "admin" if "ops_admin" in roles else "user"
+    return p
 
 
-# ---------- Models ----------
-class RegisterIn(BaseModel):
-    name: str = Field(min_length=1, max_length=80)
-    email: EmailStr
-    password: str = Field(min_length=6)
-    daily_plan: int = 5
-    pincode: str = ""
-    upi_id: str = ""
+def get_admin_user(user: dict = Depends(get_current_user)) -> dict:
+    if user["_role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
 
 
-class LoginIn(BaseModel):
-    email: EmailStr
-    password: str
+def user_public(p: dict) -> dict:
+    return {"id": p["id"], "email": p.get("email") or "", "name": p.get("display_name") or "",
+            "role": p.get("_role", "user"), "daily_plan": p.get("daily_plan") or 5,
+            "pincode": p.get("pincode") or "", "upi_id": p.get("upi_id") or "",
+            "autopay_status": p.get("autopay_status") or "none"}
+
+
+@api.get("/auth/me")
+def me(user: dict = Depends(get_current_user)):
+    return user_public(user)
+
+
+class ProfileIn(BaseModel):
+    name: Optional[str] = None
+    daily_plan: Optional[int] = None
+    pincode: Optional[str] = None
+    upi_id: Optional[str] = None
+
+
+@api.patch("/me")
+def update_me(body: ProfileIn, user: dict = Depends(get_current_user)):
+    upd = {}
+    if body.name:
+        upd["display_name"] = body.name
+    if body.daily_plan in (1, 5, 10):
+        upd["daily_plan"] = body.daily_plan
+    if body.pincode is not None:
+        upd["pincode"] = body.pincode
+    if body.upi_id is not None:
+        upd["upi_id"] = body.upi_id
+    if upd:
+        sb.table("profiles").update(upd).eq("id", user["id"]).execute()
+        user = {**user, **upd}
+    return user_public(user)
+
+
+# ---------- Kudams ----------
+def kudam_out(d: dict) -> dict:
+    return {"id": d["id"], "name": d["name"], "goal_amount": round(d["goal_paise"] / 100),
+            "saved_amount": round(d["saved_paise"] / 100), "status": d["status"],
+            "created_at": d["created_at"]}
 
 
 class KudamCreate(BaseModel):
     name: str = Field(min_length=1, max_length=60)
-    goal_amount: int = Field(gt=0)  # rupees
+    goal_amount: int = Field(gt=0)
 
 
+@api.get("/kudams")
+def list_kudams(user: dict = Depends(get_current_user)):
+    rows = (sb.table("kudams").select("*").eq("profile_id", user["id"])
+            .order("created_at", desc=True).execute().data)
+    return [kudam_out(d) for d in rows]
+
+
+@api.post("/kudams")
+def create_kudam(body: KudamCreate, user: dict = Depends(get_current_user)):
+    d = sb.table("kudams").insert({"profile_id": user["id"], "name": body.name,
+                                   "goal_paise": body.goal_amount * 100}).execute().data[0]
+    return kudam_out(d)
+
+
+@api.get("/kudams/{kudam_id}/deposits")
+def kudam_deposits(kudam_id: str, user: dict = Depends(get_current_user)):
+    rows = (sb.table("kudam_deposits").select("*").eq("kudam_id", kudam_id)
+            .eq("profile_id", user["id"]).order("created_at", desc=True).execute().data)
+    return [{"id": d["id"], "amount": round(d["amount_paise"] / 100), "created_at": d["created_at"]} for d in rows]
+
+
+def apply_kudam_deposit(kudam_id: str, amount_paise: int, source: str, payment_id: Optional[str] = None) -> dict:
+    k = sb.table("kudams").select("*").eq("id", kudam_id).execute().data[0]
+    sb.table("kudam_deposits").insert({
+        "kudam_id": kudam_id, "profile_id": k["profile_id"], "amount_paise": amount_paise,
+        "source": source, "provider_payment_id": payment_id}).execute()
+    new_saved = k["saved_paise"] + amount_paise
+    upd = {"saved_paise": new_saved}
+    if new_saved >= k["goal_paise"] and k["status"] == "active":
+        upd["status"] = "complete"
+    return sb.table("kudams").update(upd).eq("id", kudam_id).execute().data[0]
+
+
+class SimulateIn(BaseModel):
+    amount: Optional[int] = Field(default=None, gt=0)
+
+
+@api.post("/kudams/{kudam_id}/simulate-deposit")
+def simulate_deposit(kudam_id: str, body: SimulateIn, user: dict = Depends(get_current_user)):
+    rows = sb.table("kudams").select("id").eq("id", kudam_id).eq("profile_id", user["id"]).execute().data
+    if not rows:
+        raise HTTPException(status_code=404, detail="Kudam not found")
+    amount = body.amount or user.get("daily_plan") or 5
+    k = apply_kudam_deposit(kudam_id, amount * 100, "simulated")
+    return {"ok": True, "kudam": kudam_out(k)}
+
+
+def get_reward_kudam(profile_id: str):
+    rows = (sb.table("kudams").select("*").eq("profile_id", profile_id)
+            .eq("status", "complete").limit(1).execute().data)
+    return rows[0] if rows else None
+
+
+@api.get("/rewards/status")
+def rewards_status(user: dict = Depends(get_current_user)):
+    k = get_reward_kudam(user["id"])
+    if k:
+        return {"discount_percent": 20, "kudam_id": k["id"], "kudam_name": k["name"]}
+    return {"discount_percent": 0}
+
+
+# ---------- Products ----------
+def product_out(d: dict) -> dict:
+    disp = d.get("display_en") or {}
+    media = d.get("media") or []
+    return {"id": d["id"], "name": disp.get("name", ""), "tamil_name": disp.get("tamil_name", ""),
+            "price_per_kg": round(d["base_price_paise"] / 100),
+            "image": media[0].get("url", "") if media else "",
+            "origin": disp.get("origin", ""), "story": disp.get("story", ""),
+            "handling": disp.get("handling", ""), "available": d["status"] == "published"}
+
+
+@api.get("/products")
+def list_products():
+    rows = (sb.table("products").select("*").neq("status", "archived")
+            .order("created_at", desc=False).execute().data)
+    return [product_out(d) for d in rows]
+
+
+# ---------- Bookings (orders) ----------
+ACTIVE_ORDER_STATUSES = ["paid", "confirmed", "packing", "ready", "out_for_delivery", "delivered", "cancelled"]
+
+
+def booking_out(o: dict) -> dict:
+    items = o.get("order_items") or []
+    it = items[0] if items else {}
+    snap = it.get("item_snapshot") or {}
+    return {"id": o["id"], "product_name": snap.get("name", ""),
+            "qty_kg": (it.get("net_weight_grams") or 0) / 1000,
+            "amount": round(o["total_paise"] / 100),
+            "pickup_date": (o.get("delivery_slot_snapshot") or {}).get("delivery_date", ""),
+            "status": o["status"],
+            "discount_percent": (o.get("policy_snapshot") or {}).get("discount_percent", 0),
+            "created_at": o["created_at"]}
+
+
+@api.get("/bookings")
+def list_bookings(user: dict = Depends(get_current_user)):
+    rows = (sb.table("orders").select("*, order_items(*)").eq("profile_id", user["id"])
+            .in_("status", ACTIVE_ORDER_STATUSES).order("created_at", desc=True).execute().data)
+    return [booking_out(o) for o in rows]
+
+
+# ---------- Payments ----------
 class OrderCreate(BaseModel):
-    purpose: str  # "deposit" | "booking"
-    amount: Optional[int] = Field(default=None, gt=0)  # rupees; required for deposit, computed for booking
+    purpose: str
+    amount: Optional[int] = Field(default=None, gt=0)
     kudam_id: Optional[str] = None
     product_id: Optional[str] = None
     qty_kg: Optional[float] = None
@@ -119,274 +247,201 @@ class VerifyIn(BaseModel):
     razorpay_signature: str
 
 
-# ---------- Auth ----------
-async def check_lockout(identifier: str):
-    rec = await db.login_attempts.find_one({"identifier": identifier})
-    if rec and rec.get("count", 0) >= 5:
-        locked_at = rec.get("last_attempt")
-        if locked_at and (now_utc() - locked_at.replace(tzinfo=timezone.utc)) < timedelta(minutes=15):
-            raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in 15 minutes.")
-        await db.login_attempts.delete_one({"identifier": identifier})
-
-
-@api.post("/auth/register")
-async def register(body: RegisterIn, response: Response):
-    email = body.email.lower()
-    if await db.users.find_one({"email": email}):
-        raise HTTPException(status_code=400, detail="An account with this email already exists")
-    doc = {"email": email, "name": body.name, "password_hash": hash_password(body.password),
-           "role": "user", "daily_plan": body.daily_plan if body.daily_plan in (1, 5, 10) else 5,
-           "pincode": body.pincode, "upi_id": body.upi_id, "created_at": now_utc()}
-    res = await db.users.insert_one(doc)
-    uid = str(res.inserted_id)
-    set_auth_cookies(response, create_access_token(uid, email), create_refresh_token(uid))
-    doc["_id"] = res.inserted_id
-    return user_public(doc)
-
-
-def client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
-
-
-@api.post("/auth/login")
-async def login(body: LoginIn, request: Request, response: Response):
-    email = body.email.lower()
-    identifier = f"{client_ip(request)}:{email}"
-    await check_lockout(identifier)
-    user = await db.users.find_one({"email": email})
-    if not user or not verify_password(body.password, user["password_hash"]):
-        await db.login_attempts.update_one(
-            {"identifier": identifier},
-            {"$inc": {"count": 1}, "$set": {"last_attempt": now_utc()}},
-            upsert=True,
-        )
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    await db.login_attempts.delete_one({"identifier": identifier})
-    uid = str(user["_id"])
-    set_auth_cookies(response, create_access_token(uid, email), create_refresh_token(uid))
-    return user_public(user)
-
-
-@api.post("/auth/logout")
-async def logout(response: Response):
-    response.delete_cookie("access_token", path="/", secure=True, samesite="none")
-    response.delete_cookie("refresh_token", path="/", secure=True, samesite="none")
-    return {"ok": True}
-
-
-@api.get("/auth/me")
-async def me(user: dict = Depends(get_current_user)):
-    return user_public(user)
-
-
-@api.post("/auth/refresh")
-async def refresh(request: Request, response: Response):
-    token = request.cookies.get("refresh_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="No refresh token")
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        if payload.get("type") != "refresh":
-            raise HTTPException(status_code=401, detail="Invalid token type")
-        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        response.set_cookie("access_token", create_access_token(str(user["_id"]), user["email"]),
-                            httponly=True, secure=True, samesite="none", max_age=3600, path="/")
-        return user_public(user)
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
-
-
-# ---------- Profile ----------
-class ProfileIn(BaseModel):
-    name: Optional[str] = None
-    daily_plan: Optional[int] = None
-    pincode: Optional[str] = None
-    upi_id: Optional[str] = None
-
-
-@api.patch("/me")
-async def update_me(body: ProfileIn, user: dict = Depends(get_current_user)):
-    upd = {}
-    if body.name:
-        upd["name"] = body.name
-    if body.daily_plan in (1, 5, 10):
-        upd["daily_plan"] = body.daily_plan
-    if body.pincode is not None:
-        upd["pincode"] = body.pincode
-    if body.upi_id is not None:
-        upd["upi_id"] = body.upi_id
-    if upd:
-        await db.users.update_one({"_id": user["_id"]}, {"$set": upd})
-    return user_public(await db.users.find_one({"_id": user["_id"]}))
-
-
-# ---------- Kudams (savings cycles) ----------
-def kudam_out(d: dict) -> dict:
-    return {"id": str(d["_id"]), "name": d["name"], "goal_amount": d["goal_amount"],
-            "saved_amount": d.get("saved_amount", 0), "status": d.get("status", "active"),
-            "created_at": d["created_at"].isoformat()}
-
-
-@api.get("/kudams")
-async def list_kudams(user: dict = Depends(get_current_user)):
-    docs = await db.kudams.find({"user_id": str(user["_id"])}).sort("created_at", -1).to_list(100)
-    return [kudam_out(d) for d in docs]
-
-
-@api.post("/kudams")
-async def create_kudam(body: KudamCreate, user: dict = Depends(get_current_user)):
-    doc = {"user_id": str(user["_id"]), "name": body.name, "goal_amount": body.goal_amount,
-           "saved_amount": 0, "status": "active", "created_at": now_utc()}
-    res = await db.kudams.insert_one(doc)
-    doc["_id"] = res.inserted_id
-    return kudam_out(doc)
-
-
-@api.get("/kudams/{kudam_id}/deposits")
-async def kudam_deposits(kudam_id: str, user: dict = Depends(get_current_user)):
-    docs = await db.deposits.find({"kudam_id": kudam_id, "user_id": str(user["_id"])}).sort("created_at", -1).to_list(200)
-    return [{"id": str(d["_id"]), "amount": d["amount"], "created_at": d["created_at"].isoformat()} for d in docs]
-
-
-# ---------- Rewards ----------
-async def get_reward_kudam(user_id: str):
-    return await db.kudams.find_one({"user_id": user_id, "status": "complete", "redeemed": {"$ne": True}})
-
-
-@api.get("/rewards/status")
-async def rewards_status(user: dict = Depends(get_current_user)):
-    kudam = await get_reward_kudam(str(user["_id"]))
-    if kudam:
-        return {"discount_percent": 20, "kudam_id": str(kudam["_id"]), "kudam_name": kudam["name"]}
-    return {"discount_percent": 0}
-
-
-# ---------- Products ----------
-def product_out(d: dict) -> dict:
-    return {"id": str(d["_id"]), "name": d["name"], "tamil_name": d["tamil_name"],
-            "price_per_kg": d["price_per_kg"], "image": d["image"], "origin": d["origin"],
-            "story": d["story"], "handling": d["handling"], "available": d.get("available", True)}
-
-
-@api.get("/products")
-async def list_products():
-    docs = await db.products.find({}).to_list(50)
-    return [product_out(d) for d in docs]
-
-
-# ---------- Bookings ----------
-def booking_out(d: dict) -> dict:
-    return {"id": str(d["_id"]), "product_name": d["product_name"], "qty_kg": d["qty_kg"],
-            "amount": d["amount"], "pickup_date": d["pickup_date"], "status": d["status"],
-            "created_at": d["created_at"].isoformat()}
-
-
-@api.get("/bookings")
-async def list_bookings(user: dict = Depends(get_current_user)):
-    docs = await db.bookings.find({"user_id": str(user["_id"])}).sort("created_at", -1).to_list(100)
-    return [booking_out(d) for d in docs]
-
-
-# ---------- Payments (Razorpay) ----------
 @api.post("/payments/create-order")
-async def create_order(body: OrderCreate, user: dict = Depends(get_current_user)):
+def create_order(body: OrderCreate, user: dict = Depends(get_current_user)):
     if body.purpose not in ("deposit", "booking"):
         raise HTTPException(status_code=400, detail="Invalid purpose")
-    amount = body.amount
-    discount_kudam_id = None
+    uid = user["id"]
     discount_percent = 0
+
     if body.purpose == "deposit":
-        if not body.kudam_id:
-            raise HTTPException(status_code=400, detail="kudam_id required")
-        if not amount:
-            raise HTTPException(status_code=400, detail="amount required")
-        kudam = await db.kudams.find_one({"_id": ObjectId(body.kudam_id), "user_id": str(user["_id"])})
-        if not kudam:
+        if not body.kudam_id or not body.amount:
+            raise HTTPException(status_code=400, detail="kudam_id and amount required")
+        krows = sb.table("kudams").select("id").eq("id", body.kudam_id).eq("profile_id", uid).execute().data
+        if not krows:
             raise HTTPException(status_code=404, detail="Kudam not found")
-    product = None
-    if body.purpose == "booking":
+        amount = body.amount
+        try:
+            rzp_order = rzp.order.create({"amount": amount * 100, "currency": "INR", "payment_capture": 1})
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Razorpay order failed: {e}")
+        sb.table("kudam_payment_attempts").insert({
+            "kudam_id": body.kudam_id, "profile_id": uid,
+            "razorpay_order_id": rzp_order["id"], "amount_paise": amount * 100}).execute()
+    else:
         if not body.product_id or not body.qty_kg or not body.pickup_date:
             raise HTTPException(status_code=400, detail="product_id, qty_kg and pickup_date required")
-        product = await db.products.find_one({"_id": ObjectId(body.product_id)})
-        if not product:
+        prows = sb.table("products").select("*").eq("id", body.product_id).neq("status", "archived").execute().data
+        if not prows:
             raise HTTPException(status_code=404, detail="Product not found")
-        base = product["price_per_kg"] * body.qty_kg
-        reward = await get_reward_kudam(str(user["_id"]))
+        prod = prows[0]
+        price_per_kg = prod["base_price_paise"] / 100
+        base = price_per_kg * body.qty_kg
+        reward = get_reward_kudam(uid)
+        discount_kudam_id = None
         if reward:
-            discount_kudam_id = str(reward["_id"])
+            discount_kudam_id = reward["id"]
             discount_percent = 20
-            base = base * 0.8
-        amount = max(1, round(base))
-    amount_paise = amount * 100
-    try:
-        rzp_order = rzp.order.create({"amount": amount_paise, "currency": "INR", "payment_capture": 1})
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Razorpay order failed: {e}")
-    await db.transactions.insert_one({
-        "order_id": rzp_order["id"], "user_id": str(user["_id"]), "purpose": body.purpose,
-        "amount": amount, "status": "created", "kudam_id": body.kudam_id,
-        "product_id": body.product_id, "qty_kg": body.qty_kg, "pickup_date": body.pickup_date,
-        "product_name": product["name"] if product else None,
-        "discount_kudam_id": discount_kudam_id, "discount_percent": discount_percent,
-        "created_at": now_utc(),
-    })
-    return {"order_id": rzp_order["id"], "amount": amount_paise, "currency": "INR",
+        amount = max(1, round(base * (1 - discount_percent / 100)))
+        try:
+            rzp_order = rzp.order.create({"amount": amount * 100, "currency": "INR", "payment_capture": 1})
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Razorpay order failed: {e}")
+        disp = prod.get("display_en") or {}
+        order = sb.table("orders").insert({
+            "public_reference": f"MNM-{uuid.uuid4().hex[:8].upper()}",
+            "profile_id": uid, "status": "pending_payment",
+            "subtotal_paise": round(base * 100), "discount_paise": round(base * 100) - amount * 100,
+            "total_paise": amount * 100,
+            "address_snapshot": {"pincode": user.get("pincode") or ""},
+            "delivery_slot_snapshot": {"delivery_date": body.pickup_date, "window": "6:00 AM"},
+            "policy_snapshot": {"discount_percent": discount_percent, "discount_kudam_id": discount_kudam_id},
+        }).execute().data[0]
+        sb.table("order_items").insert({
+            "order_id": order["id"], "product_id": prod["id"], "species_id": prod["species_id"],
+            "cut_id": prod["cut_id"],
+            "item_snapshot": {"name": disp.get("name", ""), "tamil_name": disp.get("tamil_name", ""),
+                              "price_per_kg": round(price_per_kg)},
+            "quantity": 1, "net_weight_grams": int(body.qty_kg * 1000),
+            "unit_price_paise": prod["base_price_paise"], "line_total_paise": amount * 100}).execute()
+        sb.table("payment_attempts").insert({
+            "order_id": order["id"], "amount_paise": amount * 100,
+            "idempotency_key": str(uuid.uuid4()), "razorpay_order_id": rzp_order["id"],
+            "quote_hash": hashlib.sha256(f"{order['id']}:{amount}".encode()).hexdigest(),
+            "expires_at": (now_utc() + timedelta(hours=1)).isoformat()}).execute()
+
+    return {"order_id": rzp_order["id"], "amount": amount * 100, "currency": "INR",
             "key_id": os.environ["RAZORPAY_KEY_ID"], "discount_percent": discount_percent}
 
 
-@api.post("/payments/verify")
-async def verify_payment(body: VerifyIn, user: dict = Depends(get_current_user)):
-    txn = await db.transactions.find_one({"order_id": body.razorpay_order_id, "user_id": str(user["_id"])})
-    if not txn:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    if txn["status"] == "paid":
-        return {"ok": True, "already_processed": True}
+def verify_signature(body: VerifyIn):
     try:
         rzp.utility.verify_payment_signature({
             "razorpay_order_id": body.razorpay_order_id,
             "razorpay_payment_id": body.razorpay_payment_id,
-            "razorpay_signature": body.razorpay_signature,
-        })
+            "razorpay_signature": body.razorpay_signature})
     except Exception:
         raise HTTPException(status_code=400, detail="Payment signature verification failed")
-    await db.transactions.update_one({"_id": txn["_id"]}, {"$set": {"status": "paid", "payment_id": body.razorpay_payment_id, "paid_at": now_utc()}})
-    result = {"ok": True, "purpose": txn["purpose"]}
-    if txn["purpose"] == "deposit":
-        await db.deposits.insert_one({"kudam_id": txn["kudam_id"], "user_id": str(user["_id"]),
-                                      "amount": txn["amount"], "payment_id": body.razorpay_payment_id,
-                                      "created_at": now_utc()})
-        await db.kudams.update_one({"_id": ObjectId(txn["kudam_id"])}, {"$inc": {"saved_amount": txn["amount"]}})
-        kudam = await db.kudams.find_one({"_id": ObjectId(txn["kudam_id"])})
-        if kudam["saved_amount"] >= kudam["goal_amount"] and kudam.get("status") != "complete":
-            await db.kudams.update_one({"_id": kudam["_id"]}, {"$set": {"status": "complete"}})
-        result["kudam"] = kudam_out(await db.kudams.find_one({"_id": ObjectId(txn["kudam_id"])}))
-    else:
-        doc = {"user_id": str(user["_id"]), "product_id": txn["product_id"], "product_name": txn["product_name"],
-               "qty_kg": txn["qty_kg"], "amount": txn["amount"], "pickup_date": txn["pickup_date"],
-               "status": "confirmed", "payment_id": body.razorpay_payment_id,
-               "discount_percent": txn.get("discount_percent", 0), "created_at": now_utc()}
-        res = await db.bookings.insert_one(doc)
-        doc["_id"] = res.inserted_id
-        if txn.get("discount_kudam_id"):
-            await db.kudams.update_one({"_id": ObjectId(txn["discount_kudam_id"])},
-                                       {"$set": {"redeemed": True, "status": "redeemed"}})
-        result["booking"] = booking_out(doc)
-    return result
+
+
+@api.post("/payments/verify")
+def verify_payment(body: VerifyIn, user: dict = Depends(get_current_user)):
+    uid = user["id"]
+    ka = (sb.table("kudam_payment_attempts").select("*")
+          .eq("razorpay_order_id", body.razorpay_order_id).eq("profile_id", uid).execute().data)
+    if ka:
+        att = ka[0]
+        if att["status"] == "paid":
+            return {"ok": True, "already_processed": True}
+        verify_signature(body)
+        sb.table("kudam_payment_attempts").update(
+            {"status": "paid", "provider_payment_id": body.razorpay_payment_id}).eq("id", att["id"]).execute()
+        sb.table("kudam_deposits").insert({
+            "kudam_id": att["kudam_id"], "profile_id": uid,
+            "amount_paise": att["amount_paise"], "provider_payment_id": body.razorpay_payment_id}).execute()
+        k = sb.table("kudams").select("*").eq("id", att["kudam_id"]).execute().data[0]
+        new_saved = k["saved_paise"] + att["amount_paise"]
+        upd = {"saved_paise": new_saved}
+        if new_saved >= k["goal_paise"] and k["status"] == "active":
+            upd["status"] = "complete"
+        k = sb.table("kudams").update(upd).eq("id", k["id"]).execute().data[0]
+        return {"ok": True, "purpose": "deposit", "kudam": kudam_out(k)}
+
+    pa = (sb.table("payment_attempts").select("*, orders!inner(*)")
+          .eq("razorpay_order_id", body.razorpay_order_id).execute().data)
+    if not pa or pa[0]["orders"]["profile_id"] != uid:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    att = pa[0]
+    if att["status"] == "paid":
+        return {"ok": True, "already_processed": True}
+    verify_signature(body)
+    sb.table("payment_attempts").update(
+        {"status": "paid", "client_result_received_at": now_utc().isoformat()}).eq("id", att["id"]).execute()
+    sb.table("payments").insert({
+        "payment_attempt_id": att["id"], "order_id": att["order_id"],
+        "provider_payment_id": body.razorpay_payment_id, "status": "captured",
+        "amount_paise": att["amount_paise"], "captured_at": now_utc().isoformat()}).execute()
+    sb.table("orders").update({"status": "confirmed", "paid_at": now_utc().isoformat(),
+                               "confirmed_at": now_utc().isoformat()}).eq("id", att["order_id"]).execute()
+    policy = att["orders"].get("policy_snapshot") or {}
+    if policy.get("discount_kudam_id"):
+        sb.table("kudams").update({"status": "redeemed", "redeemed_at": now_utc().isoformat()}) \
+            .eq("id", policy["discount_kudam_id"]).execute()
+    order = sb.table("orders").select("*, order_items(*)").eq("id", att["order_id"]).execute().data[0]
+    return {"ok": True, "purpose": "booking", "booking": booking_out(order)}
+
+
+# ---------- UPI Autopay (Razorpay subscriptions) ----------
+class AutopayVerifyIn(BaseModel):
+    razorpay_payment_id: str
+    razorpay_subscription_id: str
+    razorpay_signature: str
+
+
+@api.post("/autopay/subscribe")
+def autopay_subscribe(user: dict = Depends(get_current_user)):
+    amt = user.get("daily_plan") or 5
+    weekly = amt * 7
+    try:
+        plan = rzp.plan.create({"period": "weekly", "interval": 1,
+                                "item": {"name": f"Meenamma Kudam ₹{amt}/day (billed ₹{weekly} weekly)",
+                                         "amount": weekly * 100, "currency": "INR"}})
+        sub = rzp.subscription.create({"plan_id": plan["id"], "total_count": 52, "customer_notify": 0})
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Razorpay autopay setup failed: {e}")
+    sb.table("profiles").update({"autopay_subscription_id": sub["id"], "autopay_status": "pending"}) \
+        .eq("id", user["id"]).execute()
+    return {"subscription_id": sub["id"], "key_id": os.environ["RAZORPAY_KEY_ID"], "amount": amt,
+            "weekly_amount": weekly}
+
+
+@api.post("/autopay/verify")
+def autopay_verify(body: AutopayVerifyIn, user: dict = Depends(get_current_user)):
+    try:
+        rzp.utility.verify_subscription_payment_signature({
+            "razorpay_subscription_id": body.razorpay_subscription_id,
+            "razorpay_payment_id": body.razorpay_payment_id,
+            "razorpay_signature": body.razorpay_signature})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Autopay signature verification failed")
+    p = sb.table("profiles").update({"autopay_status": "active",
+                                     "autopay_subscription_id": body.razorpay_subscription_id}) \
+        .eq("id", user["id"]).execute().data[0]
+    p["_role"] = user["_role"]
+    return user_public(p)
+
+
+@api.post("/autopay/cancel")
+def autopay_cancel(user: dict = Depends(get_current_user)):
+    if user.get("autopay_subscription_id"):
+        try:
+            rzp.subscription.cancel(user["autopay_subscription_id"])
+        except Exception:
+            pass
+    p = sb.table("profiles").update({"autopay_status": "cancelled"}).eq("id", user["id"]).execute().data[0]
+    p["_role"] = user["_role"]
+    return user_public(p)
+
+
+# ---------- Live stats (public) ----------
+@api.get("/stats/live")
+def stats_live():
+    prods = sb.table("products").select("display_en, status").neq("status", "archived").execute().data
+    live = [p for p in prods if p["status"] == "published"]
+    harbours = len({(p.get("display_en") or {}).get("origin", "").split(",")[0].strip()
+                    for p in live if (p.get("display_en") or {}).get("origin")})
+    households = sb.table("profiles").select("id", count="exact").execute().count or 0
+    kud = sb.table("kudams").select("saved_paise, status").execute().data
+    items = sb.table("order_items").select("net_weight_grams, orders(status)").execute().data
+    kg = sum(i["net_weight_grams"] for i in items
+             if (i.get("orders") or {}).get("status") in ACTIVE_ORDER_STATUSES) / 1000
+    return {"catches_live": len(live), "harbours": harbours,
+            "kg_reserved": round(kg, 1), "households": households,
+            "saved_rupees": round(sum(k["saved_paise"] for k in kud) / 100),
+            "kudams_filled": len([k for k in kud if k["status"] in ("complete", "redeemed")])}
 
 
 # ---------- Admin ----------
-async def get_admin_user(request: Request) -> dict:
-    user = await get_current_user(request)
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user
-
-
 class ProductIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     tamil_name: str = ""
@@ -402,19 +457,134 @@ class BookingStatusIn(BaseModel):
     status: str
 
 
+def ensure_cut() -> str:
+    rows = sb.table("cuts").select("id").eq("code", "whole_cleaned").execute().data
+    if rows:
+        return rows[0]["id"]
+    return sb.table("cuts").insert({"code": "whole_cleaned", "slug": "whole-cleaned",
+                                    "display_en": {"name": "Whole · Cleaned"}}).execute().data[0]["id"]
+
+
+def ensure_species(name: str, tamil: str = "") -> str:
+    slug = slugify(name)
+    rows = sb.table("species").select("id").eq("slug", slug).execute().data
+    if rows:
+        return rows[0]["id"]
+    return sb.table("species").insert({"canonical_name": name, "slug": slug, "status": "published",
+                                       "display_en": {"name": name},
+                                       "display_ta": {"name": tamil}}).execute().data[0]["id"]
+
+
+def product_row(body: ProductIn) -> dict:
+    return {"status": "published" if body.available else "draft",
+            "base_price_paise": body.price_per_kg * 100,
+            "display_en": {"name": body.name, "tamil_name": body.tamil_name, "origin": body.origin,
+                           "story": body.story, "handling": body.handling},
+            "media": [{"url": body.image}] if body.image else []}
+
+
+@api.post("/admin/products")
+def admin_create_product(body: ProductIn, admin: dict = Depends(get_admin_user)):
+    row = product_row(body)
+    row.update({"species_id": ensure_species(body.name, body.tamil_name), "cut_id": ensure_cut(),
+                "slug": f"{slugify(body.name)}-{uuid.uuid4().hex[:6]}",
+                "sku": f"MNM-{uuid.uuid4().hex[:8].upper()}", "net_weight_grams": 1000})
+    d = sb.table("products").insert(row).execute().data[0]
+    return product_out(d)
+
+
+@api.put("/admin/products/{product_id}")
+def admin_update_product(product_id: str, body: ProductIn, admin: dict = Depends(get_admin_user)):
+    rows = sb.table("products").update(product_row(body)).eq("id", product_id).execute().data
+    if not rows:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return product_out(rows[0])
+
+
+@api.delete("/admin/products/{product_id}")
+def admin_delete_product(product_id: str, admin: dict = Depends(get_admin_user)):
+    rows = sb.table("products").update({"status": "archived", "archived_at": now_utc().isoformat()}) \
+        .eq("id", product_id).execute().data
+    if not rows:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return {"ok": True}
+
+
 @api.get("/admin/stats")
-async def admin_stats(admin: dict = Depends(get_admin_user)):
-    users = await db.users.count_documents({"role": {"$ne": "admin"}})
-    bookings = await db.bookings.count_documents({})
-    revenue = 0
-    async for b in db.bookings.find({}, {"amount": 1}):
-        revenue += b.get("amount", 0)
-    saved = 0
-    async for k in db.kudams.find({}, {"saved_amount": 1}):
-        saved += k.get("saved_amount", 0)
-    products = await db.products.count_documents({})
-    return {"users": users, "bookings": bookings, "booking_revenue": revenue,
-            "total_saved": saved, "products": products}
+def admin_stats(admin: dict = Depends(get_admin_user)):
+    profiles_count = sb.table("profiles").select("id", count="exact").execute().count or 0
+    admins = sb.table("staff_role_assignments").select("id", count="exact") \
+        .eq("role", "ops_admin").is_("revoked_at", "null").execute().count or 0
+    orders = sb.table("orders").select("total_paise").in_("status", ACTIVE_ORDER_STATUSES).execute().data
+    kud = sb.table("kudams").select("saved_paise").execute().data
+    products = sb.table("products").select("id", count="exact").neq("status", "archived").execute().count or 0
+    return {"users": max(0, profiles_count - admins), "bookings": len(orders),
+            "booking_revenue": round(sum(o["total_paise"] for o in orders) / 100),
+            "total_saved": round(sum(k["saved_paise"] for k in kud) / 100), "products": products}
+
+
+@api.get("/admin/bookings")
+def admin_bookings(admin: dict = Depends(get_admin_user)):
+    rows = (sb.table("orders").select("*, order_items(*), profiles(display_name, email)")
+            .in_("status", ACTIVE_ORDER_STATUSES).order("created_at", desc=True).limit(500).execute().data)
+    out = []
+    for o in rows:
+        b = booking_out(o)
+        prof = o.get("profiles") or {}
+        b["user"] = {"name": prof.get("display_name") or "", "email": prof.get("email") or ""}
+        out.append(b)
+    return out
+
+
+@api.patch("/admin/bookings/{booking_id}/status")
+def admin_update_booking(booking_id: str, body: BookingStatusIn, admin: dict = Depends(get_admin_user)):
+    if body.status not in ("confirmed", "ready", "delivered", "cancelled"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+    upd = {"status": body.status}
+    if body.status == "delivered":
+        upd["delivered_at"] = now_utc().isoformat()
+    rows = sb.table("orders").update(upd).eq("id", booking_id).execute().data
+    if not rows:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    order = sb.table("orders").select("*, order_items(*)").eq("id", booking_id).execute().data[0]
+    return booking_out(order)
+
+
+@api.get("/admin/kudams")
+def admin_kudams(admin: dict = Depends(get_admin_user)):
+    rows = (sb.table("kudams").select("*, profiles(display_name, email)")
+            .order("created_at", desc=True).limit(500).execute().data)
+    out = []
+    for d in rows:
+        k = kudam_out(d)
+        prof = d.get("profiles") or {}
+        k["user"] = {"name": prof.get("display_name") or "", "email": prof.get("email") or ""}
+        out.append(k)
+    return out
+
+
+@api.get("/admin/users")
+def admin_users(admin: dict = Depends(get_admin_user)):
+    profiles = (sb.table("profiles").select("*, staff_role_assignments!profile_id(role, revoked_at)")
+                .order("created_at", desc=True).limit(500).execute().data)
+    kudams = sb.table("kudams").select("profile_id").execute().data
+    orders = sb.table("orders").select("profile_id").in_("status", ACTIVE_ORDER_STATUSES).execute().data
+    kc, oc = {}, {}
+    for k in kudams:
+        kc[k["profile_id"]] = kc.get(k["profile_id"], 0) + 1
+    for o in orders:
+        oc[o["profile_id"]] = oc.get(o["profile_id"], 0) + 1
+    out = []
+    for p in profiles:
+        roles = [r["role"] for r in (p.get("staff_role_assignments") or []) if not r.get("revoked_at")]
+        out.append({"id": p["id"], "email": p.get("email") or "", "name": p.get("display_name") or "",
+                    "role": "admin" if "ops_admin" in roles else "user", "created_at": p["created_at"],
+                    "kudam_count": kc.get(p["id"], 0), "booking_count": oc.get(p["id"], 0)})
+    return out
+
+
+UPLOAD_DIR = "/app/backend/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 @api.post("/admin/upload")
@@ -431,156 +601,12 @@ async def admin_upload(file: UploadFile = File(...), admin: dict = Depends(get_a
     return {"url": f"/api/uploads/{fname}"}
 
 
-
-@api.post("/admin/products")
-async def admin_create_product(body: ProductIn, admin: dict = Depends(get_admin_user)):
-    doc = {**body.model_dump(), "created_at": now_utc()}
-    res = await db.products.insert_one(doc)
-    doc["_id"] = res.inserted_id
-    return product_out(doc)
-
-
-@api.put("/admin/products/{product_id}")
-async def admin_update_product(product_id: str, body: ProductIn, admin: dict = Depends(get_admin_user)):
-    res = await db.products.update_one({"_id": ObjectId(product_id)}, {"$set": body.model_dump()})
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Product not found")
-    return product_out(await db.products.find_one({"_id": ObjectId(product_id)}))
-
-
-@api.delete("/admin/products/{product_id}")
-async def admin_delete_product(product_id: str, admin: dict = Depends(get_admin_user)):
-    res = await db.products.delete_one({"_id": ObjectId(product_id)})
-    if res.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Product not found")
-    return {"ok": True}
-
-
-async def user_email_map(user_ids: list) -> dict:
-    ids = [ObjectId(u) for u in set(user_ids) if u]
-    users = await db.users.find({"_id": {"$in": ids}}, {"email": 1, "name": 1}).to_list(1000)
-    return {str(u["_id"]): {"email": u["email"], "name": u.get("name", "")} for u in users}
-
-
-@api.get("/admin/bookings")
-async def admin_bookings(admin: dict = Depends(get_admin_user)):
-    docs = await db.bookings.find({}).sort("created_at", -1).to_list(500)
-    umap = await user_email_map([d["user_id"] for d in docs])
-    out = []
-    for d in docs:
-        b = booking_out(d)
-        b["user"] = umap.get(d["user_id"], {})
-        out.append(b)
-    return out
-
-
-@api.patch("/admin/bookings/{booking_id}/status")
-async def admin_update_booking(booking_id: str, body: BookingStatusIn, admin: dict = Depends(get_admin_user)):
-    if body.status not in ("confirmed", "ready", "collected", "cancelled"):
-        raise HTTPException(status_code=400, detail="Invalid status")
-    res = await db.bookings.update_one({"_id": ObjectId(booking_id)}, {"$set": {"status": body.status}})
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Booking not found")
-    return booking_out(await db.bookings.find_one({"_id": ObjectId(booking_id)}))
-
-
-@api.get("/admin/kudams")
-async def admin_kudams(admin: dict = Depends(get_admin_user)):
-    docs = await db.kudams.find({}).sort("created_at", -1).to_list(500)
-    umap = await user_email_map([d["user_id"] for d in docs])
-    out = []
-    for d in docs:
-        k = kudam_out(d)
-        k["user"] = umap.get(d["user_id"], {})
-        out.append(k)
-    return out
-
-
-@api.get("/admin/users")
-async def admin_users(admin: dict = Depends(get_admin_user)):
-    docs = await db.users.find({}, {"password_hash": 0}).sort("created_at", -1).to_list(500)
-    out = []
-    for u in docs:
-        uid = str(u["_id"])
-        out.append({"id": uid, "email": u["email"], "name": u.get("name", ""),
-                    "role": u.get("role", "user"),
-                    "created_at": u["created_at"].isoformat() if u.get("created_at") else None,
-                    "kudam_count": await db.kudams.count_documents({"user_id": uid}),
-                    "booking_count": await db.bookings.count_documents({"user_id": uid})})
-    return out
-
-
-# ---------- Seeding ----------
-PRODUCTS = [
-    {"name": "Vanjaram", "tamil_name": "வஞ்சரம்", "price_per_kg": 1100,
-     "image": "https://images.unsplash.com/photo-1611214774777-3d997a9d0e35?w=800&q=80",
-     "origin": "Kasimedu Harbour, Chennai",
-     "story": "Line-caught at dawn by the Karuppan family, third-generation fishers of Kasimedu. The seer fish is the king of Tamil feasts.",
-     "handling": "Iced within 20 minutes of catch. Never frozen."},
-    {"name": "Sankara", "tamil_name": "சங்கரா", "price_per_kg": 480,
-     "image": "https://images.unsplash.com/photo-1566575071977-42fab7fae5c8?w=800&q=80",
-     "origin": "Nagapattinam Coast",
-     "story": "Red snapper hauled from the reef beds of Nagapattinam, where the Cauvery meets the Bay of Bengal.",
-     "handling": "Sorted by hand, gill-checked for freshness."},
-    {"name": "Vaaval", "tamil_name": "வாவல்", "price_per_kg": 850,
-     "image": "https://images.unsplash.com/photo-1572123866325-6f15f82c993d?w=800&q=80",
-     "origin": "Rameswaram Waters",
-     "story": "Silver pomfret from the sacred waters of Rameswaram, prized for Sunday kuzhambu across Tamil homes.",
-     "handling": "Chilled seawater immersion, delivered same day."},
-    {"name": "Iral", "tamil_name": "இறால்", "price_per_kg": 650,
-     "image": "https://images.unsplash.com/photo-1578069744397-2f3942a02a7b?w=800&q=80",
-     "origin": "Pulicat Lake",
-     "story": "Tiger prawns from the brackish lagoons of Pulicat, netted by hand the way it has been done for 400 years.",
-     "handling": "Live-sorted, heads intact, flash-iced."},
-    {"name": "Nethili", "tamil_name": "நெத்திலி", "price_per_kg": 320,
-     "image": "https://images.unsplash.com/photo-1634932515818-7f9292c4e149?w=800&q=80",
-     "origin": "Kanyakumari Shore",
-     "story": "Anchovies scooped from moonlit shore-seines at Kanyakumari, where three oceans meet.",
-     "handling": "Sun-shade dried option available on request."},
-    {"name": "Kanava", "tamil_name": "கணவா", "price_per_kg": 550,
-     "image": "https://images.unsplash.com/photo-1703756292793-287f082d3a45?w=800&q=80",
-     "origin": "Tuticorin Pearl Coast",
-     "story": "Squid jigged at night off the pearl coast of Tuticorin, tender enough for the softest thokku.",
-     "handling": "Cleaned on request, ink sacs preserved."},
-]
-
-
-@app.on_event("startup")
-async def startup():
-    await db.users.create_index("email", unique=True)
-    await db.login_attempts.create_index("identifier")
-    await db.kudams.create_index("user_id")
-    await db.transactions.create_index("order_id")
-    admin_email = os.environ["ADMIN_EMAIL"]
-    admin_password = os.environ["ADMIN_PASSWORD"]
-    existing = await db.users.find_one({"email": admin_email})
-    if existing is None:
-        await db.users.insert_one({"email": admin_email, "password_hash": hash_password(admin_password),
-                                   "name": "Meenamma Admin", "role": "admin", "created_at": now_utc()})
-    elif not verify_password(admin_password, existing["password_hash"]):
-        await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
-    demo = await db.users.find_one({"email": "demo@meenamma.in"})
-    if demo is None:
-        res = await db.users.insert_one({"email": "demo@meenamma.in", "password_hash": hash_password("meenamma2026"),
-                                         "name": "Demo Family", "role": "user", "daily_plan": 5,
-                                         "pincode": "600013", "upi_id": "demofamily@upi", "created_at": now_utc()})
-        await db.kudams.insert_one({"user_id": str(res.inserted_id), "name": "Sunday Feast", "goal_amount": 500,
-                                    "saved_amount": 330, "status": "active", "created_at": now_utc()})
-    elif not verify_password("meenamma2026", demo["password_hash"]):
-        await db.users.update_one({"email": "demo@meenamma.in"}, {"$set": {"password_hash": hash_password("meenamma2026")}})
-    if await db.products.count_documents({}) == 0:
-        for p in PRODUCTS:
-            await db.products.insert_one({**p, "available": True, "created_at": now_utc()})
-
-
 @api.get("/health")
-async def health():
-    return {"status": "ok"}
+def health():
+    return {"status": "ok", "db": "supabase"}
 
 
 app.include_router(api)
-UPLOAD_DIR = "/app/backend/uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/api/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 app.add_middleware(
     CORSMiddleware,

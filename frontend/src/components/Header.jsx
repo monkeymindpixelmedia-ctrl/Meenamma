@@ -25,7 +25,7 @@ export default function Header() {
           <span className="font-serif text-henna text-xl font-semibold" style={{ letterSpacing: "0.18em" }}>
             MEENAMMA
           </span>
-          <span className="tamil text-gold text-xs hidden sm:inline">மீனம்மா</span>
+          <span className="tamil text-gold text-sm hidden sm:inline">மீனம்மா</span>
         </button>
 
         <nav className="hidden md:flex items-center gap-8">

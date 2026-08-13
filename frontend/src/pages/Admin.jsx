@@ -5,7 +5,7 @@ import { api, formatApiErrorDetail, imgUrl } from "../lib/api";
 
 const TABS = ["Overview", "Products", "Orders", "Kudams", "Customers"];
 const EMPTY = { name: "", tamil_name: "", price_per_kg: "", image: "", origin: "", story: "", handling: "", available: true };
-const STATUSES = ["confirmed", "ready", "collected", "cancelled"];
+const STATUSES = ["confirmed", "ready", "delivered", "cancelled"];
 
 function Stat({ label, value }) {
   return (
