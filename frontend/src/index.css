@@ -1,0 +1,147 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --henna: #4a1c17;
+  --gold: #c5a059;
+  --sandalwood: #f4ebd0;
+}
+
+html, body {
+  background: #33110d;
+  color: var(--sandalwood);
+  font-family: "Montserrat", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--gold);
+  color: var(--henna);
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--henna);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--gold);
+}
+
+.silk-texture {
+  background-image: radial-gradient(rgba(197, 160, 89, 0.05) 0.5px, transparent 0.5px),
+    radial-gradient(rgba(197, 160, 89, 0.04) 0.5px, transparent 0.5px);
+  background-size: 14px 14px, 22px 22px;
+  background-position: 0 0, 7px 7px;
+}
+
+.gold-border {
+  border: 1px solid rgba(197, 160, 89, 0.55);
+}
+
+.filigree-card {
+  position: relative;
+  background: #f4ebd0;
+  color: #4a1c17;
+  border: 1px solid rgba(197, 160, 89, 0.6);
+}
+.filigree-card::before,
+.filigree-card::after {
+  content: "";
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+}
+.filigree-card::before {
+  top: 5px;
+  left: 5px;
+  border-top: 1.5px solid #c5a059;
+  border-left: 1.5px solid #c5a059;
+}
+.filigree-card::after {
+  bottom: 5px;
+  right: 5px;
+  border-bottom: 1.5px solid #c5a059;
+  border-right: 1.5px solid #c5a059;
+}
+
+.glass-henna {
+  background: rgba(74, 28, 23, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(197, 160, 89, 0.3);
+}
+
+.input-ritual {
+  background: transparent;
+  border: 1px solid rgba(197, 160, 89, 0.4);
+  color: #f4ebd0;
+  padding: 14px 16px;
+  width: 100%;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  outline: none;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.input-ritual::placeholder {
+  color: rgba(244, 235, 208, 0.35);
+}
+.input-ritual:focus {
+  border-color: #c5a059;
+  box-shadow: 0 0 0 1px rgba(197, 160, 89, 0.35);
+}
+
+.btn-ritual {
+  border: 1px solid #c5a059;
+  color: #c5a059;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 16px 28px;
+  transition: background-color 0.35s ease, color 0.35s ease, box-shadow 0.35s ease;
+  background: transparent;
+}
+.btn-ritual:hover {
+  background: #c5a059;
+  color: #4a1c17;
+  box-shadow: 0 0 24px rgba(197, 160, 89, 0.35);
+}
+.btn-ritual:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.btn-solid-gold {
+  background: #c5a059;
+  color: #4a1c17;
+  border: 1px solid #c5a059;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 16px 28px;
+  transition: background-color 0.35s ease, box-shadow 0.35s ease;
+}
+.btn-solid-gold:hover {
+  background: #e5c17a;
+  box-shadow: 0 0 28px rgba(197, 160, 89, 0.45);
+}
+.btn-solid-gold:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.tamil {
+  font-family: "Noto Serif Tamil", serif;
+}
+
+.oval-cameo {
+  border-radius: 50% / 42%;
+  overflow: hidden;
+  border: 2px solid rgba(197, 160, 89, 0.7);
+  box-shadow: 0 0 0 6px rgba(74, 28, 23, 1), 0 0 0 7px rgba(197, 160, 89, 0.35);
+}

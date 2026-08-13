@@ -1,0 +1,42 @@
+{
+  "summary": "First full test run of Meenamma MVP. Backend: 12/13 pytest passing. Frontend: all 23 tracked assertions passed — splash auto-navigates, landing shows hero + CTAs, register lands on dashboard, kudam creation renders Savings Mandala at 0%, deposit-btn opens Razorpay checkout (iframe confirmed), market lists all 6 products with story-toggle + booking inputs, booking flow also opens Razorpay checkout, bottom nav present, admin login works.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/login", "issue": "Brute force lockout uses request.client.host + email as identifier. Behind K8s ingress the source IP is the proxy pod and can rotate per-request, so 5 wrong-password attempts on the same email did NOT trigger the 429 lockout — each attempt landed on a fresh identifier and returned 401. Test test_brute_force_lockout FAILED on external URL. Fix: derive IP from X-Forwarded-For (leftmost) OR lock by email alone (accept the DoS trade-off), or by (email) with lower threshold."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard (Razorpay checkout)", "issues": ["Razorpay checkout emits many Mixed-Content warnings (loads http://localhost:7070/*.png icons over HTTPS page). These are Razorpay's own hosted checkout assets; not caused by our code, but worth noting."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_meenamma_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix brute-force lockout so it works behind a reverse proxy: use X-Forwarded-For (or lock by email only). Current implementation is a no-op in this deployment."
+  ],
+  "critical_code_review_comments": [
+    "server.py check_lockout: identifier = f'{ip}:{email}' where ip = request.client.host — behind K8s ingress this is the proxy IP and can change per request. Use request.headers.get('x-forwarded-for','').split(',')[0].strip() or fallback to email-only.",
+    "server.py sets cookies with samesite='none' and secure=True (correct for cross-site), but delete_cookie in /auth/logout doesn't pass secure/samesite/path attributes matching the set — some browsers may not clear it. Prefer response.delete_cookie('access_token', path='/', samesite='none', secure=True).",
+    "CORS uses allow_origin_regex=r'https?://.*' with allow_credentials=True. Works, but this is effectively 'any origin' with credentials — tighten to the actual frontend domain in production.",
+    "server.py is a single ~380-line file — acceptable for MVP, but auth / kudams / products / payments should be split into routers as it grows.",
+    "@app.on_event('startup') is deprecated in FastAPI; use lifespan context manager.",
+    "/api/payments/create-order: amount is int rupees; no sane upper bound. Add max limit to prevent accidental huge orders.",
+    "verify_payment writes deposit + increments kudam saved_amount in two separate operations without a transaction — a crash between them can desync balances. Fine for MVP but flag for later."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_meenamma_api.py (new)"
+  ],
+  "success_rate": {"backend": "92% (12/13)", "frontend": "100% (23/23 assertions)"},
+  "test_credentials": "Admin admin@meenamma.in / TempleGold@2026 (works). Registered throwaway users test_<uuid>@example.com / TestPass123!.",
+  "seed_data_creation": "6 products auto-seeded by startup hook (Vanjaram, Sankara, Vaaval, Iral, Nethili, Kanava) — verified. Admin auto-seeded/updated on startup — verified.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend test file at /app/backend/tests/test_meenamma_api.py — run with pytest. The single failing test (test_brute_force_lockout) will pass automatically once the ip-derivation is fixed to use X-Forwarded-For. Do NOT complete Razorpay payment in browser — just verify iframe opens (already covered). Frontend uses data-testid consistently, selectors used: begin-kudam-btn, view-catch-btn, register-{name,email,password}-input, register-submit-btn, create-first-kudam-btn, kudam-{name,goal}-input, kudam-create-submit, savings-mandala, mandala-progress-pct, deposit-btn, bottom-nav, story-toggle-vanjaram, booking-qty-input, booking-date-input, login-{email,password}-input, login-submit-btn.",
+  "rca of the issue": "Brute force lockout not triggering: identifier is derived from request.client.host + email. In the K8s + ingress deployment, request.client.host is the ingress/proxy pod IP which is not stable across requests (different upstream connections may terminate on different edge pods and connection reuse patterns), so each failed attempt often creates a fresh login_attempts document instead of incrementing the same one. Reproduction: POST /api/auth/login 6× with the same bogus email + wrong password against the public REACT_APP_BACKEND_URL — every response is 401 instead of the expected 429 on the 6th. Mitigation: read the client IP from X-Forwarded-For header (take leftmost value), or lock purely by email (with rate-limit/backoff), or by (email + user-agent fingerprint)."
+}
