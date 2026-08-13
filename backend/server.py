@@ -8,8 +8,10 @@ import razorpay
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Annotated
 from bson import ObjectId
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+import uuid
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr, BeforeValidator
 
@@ -55,7 +57,9 @@ def set_auth_cookies(response: Response, access: str, refresh: str):
 
 
 def user_public(doc: dict) -> dict:
-    return {"id": str(doc["_id"]), "email": doc["email"], "name": doc.get("name", ""), "role": doc.get("role", "user")}
+    return {"id": str(doc["_id"]), "email": doc["email"], "name": doc.get("name", ""),
+            "role": doc.get("role", "user"), "daily_plan": doc.get("daily_plan", 5),
+            "pincode": doc.get("pincode", ""), "upi_id": doc.get("upi_id", "")}
 
 
 async def get_current_user(request: Request) -> dict:
@@ -85,6 +89,9 @@ class RegisterIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     email: EmailStr
     password: str = Field(min_length=6)
+    daily_plan: int = 5
+    pincode: str = ""
+    upi_id: str = ""
 
 
 class LoginIn(BaseModel):
@@ -99,7 +106,7 @@ class KudamCreate(BaseModel):
 
 class OrderCreate(BaseModel):
     purpose: str  # "deposit" | "booking"
-    amount: int = Field(gt=0)  # rupees
+    amount: Optional[int] = Field(default=None, gt=0)  # rupees; required for deposit, computed for booking
     kudam_id: Optional[str] = None
     product_id: Optional[str] = None
     qty_kg: Optional[float] = None
@@ -128,7 +135,8 @@ async def register(body: RegisterIn, response: Response):
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="An account with this email already exists")
     doc = {"email": email, "name": body.name, "password_hash": hash_password(body.password),
-           "role": "user", "created_at": now_utc()}
+           "role": "user", "daily_plan": body.daily_plan if body.daily_plan in (1, 5, 10) else 5,
+           "pincode": body.pincode, "upi_id": body.upi_id, "created_at": now_utc()}
     res = await db.users.insert_one(doc)
     uid = str(res.inserted_id)
     set_auth_cookies(response, create_access_token(uid, email), create_refresh_token(uid))
@@ -193,6 +201,30 @@ async def refresh(request: Request, response: Response):
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
 
+# ---------- Profile ----------
+class ProfileIn(BaseModel):
+    name: Optional[str] = None
+    daily_plan: Optional[int] = None
+    pincode: Optional[str] = None
+    upi_id: Optional[str] = None
+
+
+@api.patch("/me")
+async def update_me(body: ProfileIn, user: dict = Depends(get_current_user)):
+    upd = {}
+    if body.name:
+        upd["name"] = body.name
+    if body.daily_plan in (1, 5, 10):
+        upd["daily_plan"] = body.daily_plan
+    if body.pincode is not None:
+        upd["pincode"] = body.pincode
+    if body.upi_id is not None:
+        upd["upi_id"] = body.upi_id
+    if upd:
+        await db.users.update_one({"_id": user["_id"]}, {"$set": upd})
+    return user_public(await db.users.find_one({"_id": user["_id"]}))
+
+
 # ---------- Kudams (savings cycles) ----------
 def kudam_out(d: dict) -> dict:
     return {"id": str(d["_id"]), "name": d["name"], "goal_amount": d["goal_amount"],
@@ -219,6 +251,19 @@ async def create_kudam(body: KudamCreate, user: dict = Depends(get_current_user)
 async def kudam_deposits(kudam_id: str, user: dict = Depends(get_current_user)):
     docs = await db.deposits.find({"kudam_id": kudam_id, "user_id": str(user["_id"])}).sort("created_at", -1).to_list(200)
     return [{"id": str(d["_id"]), "amount": d["amount"], "created_at": d["created_at"].isoformat()} for d in docs]
+
+
+# ---------- Rewards ----------
+async def get_reward_kudam(user_id: str):
+    return await db.kudams.find_one({"user_id": user_id, "status": "complete", "redeemed": {"$ne": True}})
+
+
+@api.get("/rewards/status")
+async def rewards_status(user: dict = Depends(get_current_user)):
+    kudam = await get_reward_kudam(str(user["_id"]))
+    if kudam:
+        return {"discount_percent": 20, "kudam_id": str(kudam["_id"]), "kudam_name": kudam["name"]}
+    return {"discount_percent": 0}
 
 
 # ---------- Products ----------
@@ -252,9 +297,14 @@ async def list_bookings(user: dict = Depends(get_current_user)):
 async def create_order(body: OrderCreate, user: dict = Depends(get_current_user)):
     if body.purpose not in ("deposit", "booking"):
         raise HTTPException(status_code=400, detail="Invalid purpose")
+    amount = body.amount
+    discount_kudam_id = None
+    discount_percent = 0
     if body.purpose == "deposit":
         if not body.kudam_id:
             raise HTTPException(status_code=400, detail="kudam_id required")
+        if not amount:
+            raise HTTPException(status_code=400, detail="amount required")
         kudam = await db.kudams.find_one({"_id": ObjectId(body.kudam_id), "user_id": str(user["_id"])})
         if not kudam:
             raise HTTPException(status_code=404, detail="Kudam not found")
@@ -265,19 +315,28 @@ async def create_order(body: OrderCreate, user: dict = Depends(get_current_user)
         product = await db.products.find_one({"_id": ObjectId(body.product_id)})
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
-    amount_paise = body.amount * 100
+        base = product["price_per_kg"] * body.qty_kg
+        reward = await get_reward_kudam(str(user["_id"]))
+        if reward:
+            discount_kudam_id = str(reward["_id"])
+            discount_percent = 20
+            base = base * 0.8
+        amount = max(1, round(base))
+    amount_paise = amount * 100
     try:
         rzp_order = rzp.order.create({"amount": amount_paise, "currency": "INR", "payment_capture": 1})
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Razorpay order failed: {e}")
     await db.transactions.insert_one({
         "order_id": rzp_order["id"], "user_id": str(user["_id"]), "purpose": body.purpose,
-        "amount": body.amount, "status": "created", "kudam_id": body.kudam_id,
+        "amount": amount, "status": "created", "kudam_id": body.kudam_id,
         "product_id": body.product_id, "qty_kg": body.qty_kg, "pickup_date": body.pickup_date,
-        "product_name": product["name"] if product else None, "created_at": now_utc(),
+        "product_name": product["name"] if product else None,
+        "discount_kudam_id": discount_kudam_id, "discount_percent": discount_percent,
+        "created_at": now_utc(),
     })
     return {"order_id": rzp_order["id"], "amount": amount_paise, "currency": "INR",
-            "key_id": os.environ["RAZORPAY_KEY_ID"]}
+            "key_id": os.environ["RAZORPAY_KEY_ID"], "discount_percent": discount_percent}
 
 
 @api.post("/payments/verify")
@@ -309,9 +368,13 @@ async def verify_payment(body: VerifyIn, user: dict = Depends(get_current_user))
     else:
         doc = {"user_id": str(user["_id"]), "product_id": txn["product_id"], "product_name": txn["product_name"],
                "qty_kg": txn["qty_kg"], "amount": txn["amount"], "pickup_date": txn["pickup_date"],
-               "status": "confirmed", "payment_id": body.razorpay_payment_id, "created_at": now_utc()}
+               "status": "confirmed", "payment_id": body.razorpay_payment_id,
+               "discount_percent": txn.get("discount_percent", 0), "created_at": now_utc()}
         res = await db.bookings.insert_one(doc)
         doc["_id"] = res.inserted_id
+        if txn.get("discount_kudam_id"):
+            await db.kudams.update_one({"_id": ObjectId(txn["discount_kudam_id"])},
+                                       {"$set": {"redeemed": True, "status": "redeemed"}})
         result["booking"] = booking_out(doc)
     return result
 
@@ -352,6 +415,21 @@ async def admin_stats(admin: dict = Depends(get_admin_user)):
     products = await db.products.count_documents({})
     return {"users": users, "bookings": bookings, "booking_revenue": revenue,
             "total_saved": saved, "products": products}
+
+
+@api.post("/admin/upload")
+async def admin_upload(file: UploadFile = File(...), admin: dict = Depends(get_admin_user)):
+    ext = os.path.splitext(file.filename or "")[1].lower() or ".jpg"
+    if ext not in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+        raise HTTPException(status_code=400, detail="Only image files allowed")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image must be under 5 MB")
+    fname = f"{uuid.uuid4().hex}{ext}"
+    with open(os.path.join(UPLOAD_DIR, fname), "wb") as f:
+        f.write(data)
+    return {"url": f"/api/uploads/{fname}"}
+
 
 
 @api.post("/admin/products")
@@ -481,6 +559,15 @@ async def startup():
                                    "name": "Meenamma Admin", "role": "admin", "created_at": now_utc()})
     elif not verify_password(admin_password, existing["password_hash"]):
         await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
+    demo = await db.users.find_one({"email": "demo@meenamma.in"})
+    if demo is None:
+        res = await db.users.insert_one({"email": "demo@meenamma.in", "password_hash": hash_password("meenamma2026"),
+                                         "name": "Demo Family", "role": "user", "daily_plan": 5,
+                                         "pincode": "600013", "upi_id": "demofamily@upi", "created_at": now_utc()})
+        await db.kudams.insert_one({"user_id": str(res.inserted_id), "name": "Sunday Feast", "goal_amount": 500,
+                                    "saved_amount": 330, "status": "active", "created_at": now_utc()})
+    elif not verify_password("meenamma2026", demo["password_hash"]):
+        await db.users.update_one({"email": "demo@meenamma.in"}, {"$set": {"password_hash": hash_password("meenamma2026")}})
     if await db.products.count_documents({}) == 0:
         for p in PRODUCTS:
             await db.products.insert_one({**p, "available": True, "created_at": now_utc()})
@@ -492,6 +579,9 @@ async def health():
 
 
 app.include_router(api)
+UPLOAD_DIR = "/app/backend/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/api/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https?://.*",

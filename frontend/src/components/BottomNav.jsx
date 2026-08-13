@@ -1,36 +1,32 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { Landmark, Fish, ScrollText } from "lucide-react";
-
-const items = [
-  { to: "/home", label: "Temple", icon: ScrollText },
-  { to: "/dashboard", label: "Kudam", icon: Landmark },
-  { to: "/market", label: "Catch", icon: Fish },
-];
+import { Home, Landmark, Fish, User } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
 
 export default function BottomNav() {
+  const { user } = useAuth();
+  const items = [
+    { to: "/home", icon: Home },
+    { to: "/dashboard", icon: Landmark },
+    { to: "/market", icon: Fish },
+    { to: user ? "/profile" : "/login", icon: User, key: "profile" },
+  ];
   return (
     <nav
-      className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-40 glass-henna border-t border-gold/30"
-      style={{ borderBottom: "none" }}
+      className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 backdrop-blur-md border-t border-gold/40"
       data-testid="bottom-nav"
     >
-      <div className="flex justify-around py-3">
-        {items.map(({ to, label, icon: Icon }) => (
+      <div className="flex justify-around py-2" style={{ paddingBottom: "max(8px, env(safe-area-inset-bottom))" }}>
+        {items.map(({ to, icon: Icon, key }) => (
           <NavLink
-            key={to}
+            key={key || to}
             to={to}
-            data-testid={`nav-${label.toLowerCase()}`}
+            data-testid={`nav-${(key || to).replace("/", "")}`}
             className={({ isActive }) =>
-              `flex flex-col items-center gap-1 px-4 transition-colors duration-300 ${
-                isActive ? "text-gold-shimmer" : "text-sandalwood/40"
-              }`
+              `p-3 transition-colors duration-300 ${isActive ? "text-henna" : "text-gold"}`
             }
           >
-            <Icon size={20} strokeWidth={1.5} />
-            <span className="text-[9px] uppercase" style={{ letterSpacing: "0.25em" }}>
-              {label}
-            </span>
+            <Icon size={22} strokeWidth={1.5} />
           </NavLink>
         ))}
       </div>

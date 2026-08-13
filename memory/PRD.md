@@ -17,17 +17,18 @@ Build a premium, high-end mobile app strictly following the "Temple Gold & Henna
 - Payments: Razorpay checkout.js on frontend; create-order + signature verify on backend
 
 ## Implemented (June 2026)
-- Ritual splash: animated mandala draw-in, Tamil மீ monogram, MEENAMMA reveal, auto-nav ~4.2s
-- Landing: editorial hero, "Begin Your Kudam" / "View Today's Catch" CTAs, mandala proverb section, 3-step ritual cards
-- JWT auth: register/login/logout/me/refresh, bcrypt, admin seeding, brute-force lockout (X-Forwarded-For aware), indexes
-- Sovereign Dashboard: SavingsMandala (rotating henna ring + liquid gold fill + shimmer wave), multi-kudam, quick amounts, Razorpay deposits, bookings list
-- Artisan Storefront: 6 seeded Tamil Nadu catches with oval cameo photos, source-story bloom reveal, qty+date pre-booking via Razorpay
-- Bottom nav (Temple/Kudam/Catch) for logged-in users
-- "The Curator" admin panel at /admin (admin role only; user chose this over migrating to Payload CMS template): Overview stats, product CRUD, all bookings with status workflow (confirmed/ready/collected/cancelled), all kudams, patron list. Crown icon on dashboard header opens it.
+- Ritual splash, light Minimal Temple theme (#FAF5E6 bg, henna text, white cards, gold borders), responsive editorial masonry (3-col desktop / edge-to-edge mobile with sticky bottom nav + FAB)
+- Dual-mode dashboard: Daily Kudam (plan ₹1/5/10, Pay-₹X-today, quick deposits, completion celebration + 20% feast discount reward) vs Fresh Catch (masonry market, slide-up booking sheet, server-computed prices w/ discount redemption)
+- JWT auth (bcrypt, httpOnly cookies, brute-force lockout w/ X-Forwarded-For); 3-step signup ritual (details+PIN serviceability → plan selection → simulated UPI connect → welcome screen); pincode/upi_id persisted
+- Quick Demo logins on /login: demo user (demo@meenamma.in/meenamma2026, seeded w/ 66% Sunday Feast kudam) + Store Admin; password visibility toggle
+- Profile page /profile (edit name/plan/pincode/UPI via PATCH /api/me)
+- Premium numerals: Bodoni Moda (large), Playfair Display tabular (small), gold ₹; contrast pass
+- Store Manager admin /admin: stats, product CRUD with image upload (POST /api/admin/upload → /api/uploads/*), availability toggle switch, order status workflow, kudams, customers
+- Success toast on deposits; empty-orders CTA; haptic feedback
 
-## Testing (iteration_1)
-- Backend 13/13 after brute-force fix; Frontend 23/23 assertions passed
-- Razorpay order creation hits live test API; payment completion not automated (test card 4111 1111 1111 1111)
+## Testing
+- iteration_1: dark MVP (fixed brute-force proxy IP); iteration_2 (redesign): 22/22 backend + all frontend; iteration_3 (polish): found register pincode persistence bug → FIXED; login-verification run: 27/27 backend, 100% frontend all login paths, session persistence, mobile
+- 'Login not working' report: not reproducible after fixes (stale lockouts cleared + register persistence); all paths verified by testing agent
 
 ## Credentials
 - Admin: admin@meenamma.in / TempleGold@2026 (see /app/memory/test_credentials.md)

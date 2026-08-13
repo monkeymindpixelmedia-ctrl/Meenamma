@@ -5,6 +5,15 @@ export const api = axios.create({
   withCredentials: true,
 });
 
+export const imgUrl = (p) =>
+  p && p.startsWith("/") ? `${process.env.REACT_APP_BACKEND_URL}${p}` : p;
+
+export const haptic = () => {
+  try {
+    if (navigator.vibrate) navigator.vibrate(12);
+  } catch (e) {}
+};
+
 export function formatApiErrorDetail(detail) {
   if (detail == null) return "Something went wrong. Please try again.";
   if (typeof detail === "string") return detail;

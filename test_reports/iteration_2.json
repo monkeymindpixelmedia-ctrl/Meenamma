@@ -1,0 +1,32 @@
+{
+  "summary": "Exhaustive login verification for Meenamma. Backend: 27/27 pytest passing including previously-failing test_register_accepts_pincode_and_upi and test_brute_force_lockout. Frontend: all requested login paths verified end-to-end on desktop (1920) and mobile (390): demo-user login → Demo Family + 66% mandala; admin login → crown admin-link-btn; manual typed login; session persists across reload and direct /dashboard nav; wrong password shows 'Invalid email or password' and immediate correct pw works; logout → /dashboard is protected → /login redirect; brute force gives 429 on 6th and does NOT lock other accounts; fresh 3-step register with pincode 600042 + plan ₹5 + UPI test@upi persists via /api/auth/me and re-login works.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Mobile Dashboard (390px)", "issues": ["Two identical 'PAY ₹5 TODAY' buttons render stacked — the inline pay-daily-btn is visible at the same time as the sticky-pay-daily-btn (bottom sticky). One of them should be hidden on md-and-below when the other is present to avoid duplicate CTA."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_meenamma_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: dedupe duplicate 'Pay ₹5 today' button on mobile dashboard (inline + sticky both visible).",
+    "Cleanup note: e2e test registered user e2e_7a4ae79c@example.com and created a throwaway login_attempts row for bf_<uuid>@example.com — harmless, can be purged."
+  ],
+  "critical_code_review_comments": [
+    "Login bug reported by user is NOT reproducible now. Fixes from main agent (pincode/upi_id persistence on register; cleared stale login_attempts lockout) are effective and verified. Brute-force lockout also works correctly (X-Forwarded-For fix from iteration-1 confirmed).",
+    "Console logs still show React Router v7 future-flag warnings — cosmetic.",
+    "Cookies use SameSite=None; Secure — correct for cross-site preview URL. /auth/logout still doesn't pass samesite/secure/path to delete_cookie (flagged in iteration-1); browsers used here still clear it in practice, but keeping the note for prod hardening."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (27/27)", "frontend": "100% (all login paths + mobile + brute-force)"},
+  "test_credentials": "demo@meenamma.in / meenamma2026 ; admin@meenamma.in / TempleGold@2026 — both work.",
+  "seed_data_creation": "New e2e user e2e_7a4ae79c@example.com (pincode 600042, upi test@upi) created during test. Demo user's daily_plan was not modified (login flow does not change it).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All login flows verified. Selectors used: demo-user-btn, demo-admin-btn, login-email-input, login-password-input, login-submit-btn, login-error, password-toggle-btn, logout-btn, admin-link-btn, dashboard-page, dashboard-username, savings-mandala, bottom-nav, register-{name,email,password,pincode,upi}-input, register-next-btn, plan-option-5, plan-continue-btn, connect-upi-btn, upi-connected, register-submit-btn, welcome-screen. Protected route: after logout the header sends user to /home; a direct visit to /dashboard while unauthenticated redirects to /login. Brute-force lockout confirmed at 6th attempt (429) and per-email so other accounts are unaffected.",
+  "rca of the issue": "Original 'login is not working' report could not be reproduced. Root cause almost certainly was the stale login_attempts documents that returned 429 for legitimate credentials in an earlier session (already cleared by main agent) combined with register not persisting pincode/upi (also fixed). Both fixes verified: (a) demo & admin & manual & re-login all reach /dashboard, (b) new register with pincode='600042'/upi_id='test@upi' persists and /api/auth/me returns those exact values, (c) brute-force still triggers 429 at 6th attempt without impacting other accounts."
+}

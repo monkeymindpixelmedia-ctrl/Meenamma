@@ -1,9 +1,14 @@
 # Test Credentials — Meenamma
 
-## Admin account
+## Admin account (Store Manager)
 - Email: admin@meenamma.in
 - Password: TempleGold@2026
 - Role: admin
+
+## Demo user (Quick Demo button on /login)
+- Email: demo@meenamma.in
+- Password: meenamma2026
+- Seeded with kudam "Sunday Feast" 330/500 (66%)
 
 ## Auth endpoints
 - POST /api/auth/register {name, email, password}

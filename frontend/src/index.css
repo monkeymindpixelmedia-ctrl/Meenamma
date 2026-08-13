@@ -5,54 +5,68 @@
 :root {
   --henna: #4a1c17;
   --gold: #c5a059;
-  --sandalwood: #f4ebd0;
+  --paper: #faf5e6;
 }
 
 html, body {
-  background: #33110d;
-  color: var(--sandalwood);
+  background: var(--paper);
+  color: var(--henna);
   font-family: "Montserrat", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
   background: var(--gold);
-  color: var(--henna);
+  color: #fff;
 }
 
 ::-webkit-scrollbar {
-  width: 4px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--henna);
+  background: var(--paper);
 }
 ::-webkit-scrollbar-thumb {
   background: var(--gold);
 }
 
-.silk-texture {
-  background-image: radial-gradient(rgba(197, 160, 89, 0.05) 0.5px, transparent 0.5px),
-    radial-gradient(rgba(197, 160, 89, 0.04) 0.5px, transparent 0.5px);
-  background-size: 14px 14px, 22px 22px;
-  background-position: 0 0, 7px 7px;
+.paper-texture {
+  background-image: radial-gradient(rgba(197, 160, 89, 0.07) 0.5px, transparent 0.5px);
+  background-size: 18px 18px;
 }
 
-.gold-border {
-  border: 1px solid rgba(197, 160, 89, 0.55);
+.glass-paper {
+  background: rgba(250, 245, 230, 0.86);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(197, 160, 89, 0.35);
+}
+
+.card-white {
+  background: #ffffff;
+  border: 1px solid rgba(197, 160, 89, 0.4);
+  transition: box-shadow 0.35s ease, border-color 0.35s ease;
+}
+@media (hover: hover) {
+  .card-white:hover {
+    border-color: rgba(197, 160, 89, 0.9);
+    box-shadow: 0 0 0 1px rgba(197, 160, 89, 0.35), 0 12px 40px -18px rgba(197, 160, 89, 0.5);
+  }
 }
 
 .filigree-card {
   position: relative;
-  background: #f4ebd0;
+  background: #ffffff;
   color: #4a1c17;
-  border: 1px solid rgba(197, 160, 89, 0.6);
+  border: 1px solid rgba(197, 160, 89, 0.45);
 }
 .filigree-card::before,
 .filigree-card::after {
   content: "";
   position: absolute;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   pointer-events: none;
 }
 .filigree-card::before {
@@ -68,69 +82,83 @@ html, body {
   border-right: 1.5px solid #c5a059;
 }
 
-.glass-henna {
-  background: rgba(74, 28, 23, 0.78);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(197, 160, 89, 0.3);
+.input-minimal {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(197, 160, 89, 0.55);
+  color: #4a1c17;
+  padding: 14px 2px;
+  width: 100%;
+  font-size: 15px;
+  outline: none;
+  border-radius: 0;
+  transition: border-color 0.3s ease;
+}
+.input-minimal::placeholder {
+  color: rgba(74, 28, 23, 0.5);
+}
+.input-minimal:focus {
+  border-bottom-color: #4a1c17;
+  border-bottom-width: 2px;
 }
 
 .input-ritual {
-  background: transparent;
-  border: 1px solid rgba(197, 160, 89, 0.4);
-  color: #f4ebd0;
-  padding: 14px 16px;
+  background: #ffffff;
+  border: 1px solid rgba(197, 160, 89, 0.5);
+  color: #4a1c17;
+  padding: 13px 15px;
   width: 100%;
   font-size: 14px;
-  letter-spacing: 0.02em;
   outline: none;
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 .input-ritual::placeholder {
-  color: rgba(244, 235, 208, 0.35);
+  color: rgba(74, 28, 23, 0.5);
 }
 .input-ritual:focus {
   border-color: #c5a059;
-  box-shadow: 0 0 0 1px rgba(197, 160, 89, 0.35);
+  box-shadow: 0 0 0 1px rgba(197, 160, 89, 0.4);
 }
 
-.btn-ritual {
-  border: 1px solid #c5a059;
-  color: #c5a059;
-  letter-spacing: 0.25em;
+.btn-henna {
+  background: #4a1c17;
+  color: #e5c17a;
+  border: 1px solid #4a1c17;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
   font-size: 11px;
   font-weight: 600;
-  padding: 16px 28px;
-  transition: background-color 0.35s ease, color 0.35s ease, box-shadow 0.35s ease;
-  background: transparent;
+  padding: 15px 28px;
+  min-height: 48px;
+  transition: background-color 0.35s ease, box-shadow 0.35s ease;
 }
-.btn-ritual:hover {
-  background: #c5a059;
-  color: #4a1c17;
-  box-shadow: 0 0 24px rgba(197, 160, 89, 0.35);
+.btn-henna:hover {
+  background: #6b2d25;
+  box-shadow: 0 10px 30px -12px rgba(74, 28, 23, 0.5);
 }
-.btn-ritual:disabled {
+.btn-henna:disabled {
   opacity: 0.45;
   pointer-events: none;
 }
 
-.btn-solid-gold {
-  background: #c5a059;
+.btn-gold-outline {
+  background: transparent;
   color: #4a1c17;
   border: 1px solid #c5a059;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   font-size: 11px;
-  font-weight: 700;
-  padding: 16px 28px;
-  transition: background-color 0.35s ease, box-shadow 0.35s ease;
+  font-weight: 600;
+  padding: 15px 28px;
+  min-height: 48px;
+  transition: background-color 0.35s ease, color 0.35s ease, box-shadow 0.35s ease;
 }
-.btn-solid-gold:hover {
-  background: #e5c17a;
-  box-shadow: 0 0 28px rgba(197, 160, 89, 0.45);
+.btn-gold-outline:hover {
+  background: #c5a059;
+  color: #ffffff;
+  box-shadow: 0 0 24px rgba(197, 160, 89, 0.4);
 }
-.btn-solid-gold:disabled {
+.btn-gold-outline:disabled {
   opacity: 0.45;
   pointer-events: none;
 }
@@ -139,9 +167,31 @@ html, body {
   font-family: "Noto Serif Tamil", serif;
 }
 
+.num-lg {
+  font-family: "Bodoni Moda", serif;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.num {
+  font-family: "Playfair Display", serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.rupee {
+  color: #c5a059;
+  font-weight: 400;
+  margin-right: 1px;
+}
+
 .oval-cameo {
   border-radius: 50% / 42%;
   overflow: hidden;
-  border: 2px solid rgba(197, 160, 89, 0.7);
-  box-shadow: 0 0 0 6px rgba(74, 28, 23, 1), 0 0 0 7px rgba(197, 160, 89, 0.35);
+  border: 2px solid rgba(197, 160, 89, 0.75);
+  box-shadow: 0 0 0 5px #ffffff, 0 0 0 6px rgba(197, 160, 89, 0.35);
+}
+
+.gold-rule {
+  height: 1px;
+  background: linear-gradient(to right, transparent, rgba(197, 160, 89, 0.7), transparent);
 }
