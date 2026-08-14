@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Pencil, Trash2, Upload } from "lucide-react";
 import { api, formatApiErrorDetail, imgUrl } from "../lib/api";
 
-const TABS = ["Overview", "Products", "Orders", "Kudams", "Customers"];
+const TABS = ["Overview", "Products", "Orders", "Kudams", "Customers", "WhatsApp"];
 const EMPTY = { name: "", tamil_name: "", price_per_kg: "", image: "", origin: "", story: "", handling: "", available: true };
 const STATUSES = ["confirmed", "ready", "delivered", "cancelled"];
 
@@ -73,6 +73,88 @@ function ProductForm({ initial, onSave, onCancel, busy }) {
         <button type="button" className="btn-gold-outline flex-1" onClick={onCancel}>Cancel</button>
       </div>
     </form>
+  );
+}
+
+function WhatsAppPanel() {
+  const [status, setStatus] = useState("DISCONNECTED");
+  const [qrCode, setQrCode] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const checkStatus = useCallback(async () => {
+    try {
+      const { data } = await api.get("/admin/whatsapp/status");
+      setStatus(data.status);
+      setQrCode(data.qr);
+    } catch (err) {
+      setStatus("DISCONNECTED");
+      setQrCode(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkStatus();
+    const interval = setInterval(checkStatus, 3000);
+    return () => clearInterval(interval);
+  }, [checkStatus]);
+
+  const handleLogout = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await api.post("/admin/whatsapp/logout");
+      setStatus("DISCONNECTED");
+      setQrCode(null);
+    } catch (err) {
+      setError("Failed to log out device.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="bg-[#FCF9F2] border border-[#C5A059]/40 p-8 rounded-xl max-w-md mx-auto text-center shadow-lg" data-testid="whatsapp-panel">
+      <h2 className="font-serif italic text-2xl text-[#4A1C17] mb-2">WhatsApp Device Manager</h2>
+      <p className="text-xs text-obsidian/60 mb-6 font-light">Link your device to dispatch automations and catch alerts directly to customers.</p>
+      
+      {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
+      
+      <div className="bg-white p-6 rounded-lg inline-block border border-gold/15 mb-6 shadow-inner">
+        {status === "CONNECTED" && (
+          <div className="flex flex-col items-center justify-center h-48 w-48 text-emerald-600">
+            <svg className="w-16 h-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="font-serif italic text-base">Device Connected</span>
+          </div>
+        )}
+        {status === "PAIRING" && qrCode ? (
+          <img src={qrCode} alt="WhatsApp QR code" className="w-48 h-48 object-contain" />
+        ) : null}
+        {status === "DISCONNECTED" && (
+          <div className="flex flex-col items-center justify-center h-48 w-48 text-obsidian/45">
+            <div className="w-8 h-8 border-2 border-gold/45 border-t-gold rounded-full animate-spin mb-3"></div>
+            <span className="text-xs italic font-serif">Connecting sidecar...</span>
+          </div>
+        )}
+      </div>
+      
+      <div className="text-xs uppercase tracking-widest text-[#4A1C17] font-semibold mb-6" style={{ letterSpacing: "0.15em" }}>
+        Status: <span className={status === "CONNECTED" ? "text-emerald-600 font-bold" : "text-amber-500"}>{status}</span>
+      </div>
+      
+      {status === "CONNECTED" && (
+        <button 
+          onClick={handleLogout} 
+          disabled={busy} 
+          className="btn-gold-outline w-full !py-2.5 !min-h-0 text-[10px] uppercase tracking-widest"
+          style={{ letterSpacing: "0.15em" }}
+        >
+          {busy ? "Disconnecting…" : "Disconnect Device"}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -279,6 +361,8 @@ export default function Admin() {
               ))}
             </div>
           )}
+
+          {tab === "WhatsApp" && <WhatsAppPanel />}
         </div>
       </div>
     </div>

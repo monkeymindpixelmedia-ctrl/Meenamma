@@ -5,6 +5,7 @@ import os
 import re
 import json
 import uuid
+import httpx
 import hashlib
 import secrets
 import razorpay
@@ -1405,6 +1406,24 @@ def admin_webhooks(admin: dict = Depends(get_admin_user)):
     rows = (sb.table("payment_webhook_events").select("*")
             .order("received_at", desc=True).limit(50).execute().data)
     return rows
+
+
+@api.get("/admin/whatsapp/status")
+def admin_whatsapp_status(admin: dict = Depends(get_admin_user)):
+    try:
+        resp = httpx.get("http://localhost:4000/status", timeout=3)
+        return resp.json()
+    except Exception as e:
+        return {"status": "DISCONNECTED", "qr": None, "error": str(e)}
+
+
+@api.post("/admin/whatsapp/logout")
+def admin_whatsapp_logout(admin: dict = Depends(get_admin_user)):
+    try:
+        resp = httpx.post("http://localhost:4000/logout", timeout=3)
+        return resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @api.get("/health")

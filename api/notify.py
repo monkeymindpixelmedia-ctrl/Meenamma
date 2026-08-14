@@ -102,6 +102,56 @@ def send_email(to: str, subject: str, html: str):
     return resp
 
 
+def _whatsapp_text(event_key: str, payload: dict, product: str) -> str:
+    """Return the plain-text WhatsApp notification message."""
+    name = payload.get("name") or "there"
+    amount = payload.get("amount") or 0
+    
+    if event_key == "autopay_predebit":
+        debit_date = payload.get("debit_date") or "tomorrow"
+        return f"Vanakkam {name}! Meenamma here. Just a quick heads-up: your daily savings deposit of \u20b9{amount} will be debited on {debit_date}. Keep your UPI account active for your weekend catch! \ud83c\udf0a"
+        
+    if event_key == "autopay_dunning":
+        return f"Hey {name}! Your unsettled kudam balance is \u20b9{amount}. It is above the authorized limit, so we did not attempt a debit. Please pay manual balance in the app: https://meenamma.org/dashboard"
+        
+    if event_key in ("autopay_payment_failed", "autopay_update_failed"):
+        return f"Aiyo {name}! We couldn't process your daily deposit of \u20b9{amount}. Complete it manually here to keep your savings streak active: https://meenamma.org/dashboard"
+        
+    if event_key == "catch_arrived":
+        msg = payload.get("message") or f"{product} has landed"
+        return f"Fresh Landing Alert! \ud83d\udea8 {msg}. Claim yours now using your Kudam balance: https://meenamma.org/market"
+        
+    if event_key == "booking_confirmed":
+        ref = f" {payload.get('reference')}" if payload.get("reference") else ""
+        date = payload.get("date") or ""
+        slot = payload.get("slot") or "6:00 AM"
+        delivery_info = f" Delivery: {date} by {slot}." if date else ""
+        payment_info = f" Value paid: \u20b9{amount}." if amount else ""
+        return f"Vanakkam {name}! Your order{ref} for {product} is confirmed.{delivery_info}{payment_info} We'll alert you when it's ready!"
+        
+    if event_key == "booking_ready":
+        return f"Your {product} is ready for pickup at the 6 AM tide! \ud83d\udc1f"
+        
+    if event_key == "booking_delivered":
+        return f"Your {product} has been delivered. Enjoy the feast! \ud83c\udf0a"
+        
+    return payload.get("message") or "An update from Meenamma."
+
+
+def send_whatsapp(to: str, text: str):
+    """Send via the Baileys WhatsApp microservice sidecar. Returns response or None."""
+    try:
+        resp = httpx.post(
+            "http://localhost:4000/send-message",
+            json={"to": to, "text": text},
+            timeout=10
+        )
+        return resp
+    except Exception as e:
+        print(f"Failed to send WhatsApp message to {to}: {e}")
+        return None
+
+
 def queue_notification(sb, *, aggregate_type, aggregate_id, event_key,
                        idempotency_key, payload) -> bool:
     """Insert an outbox row; returns False on duplicate/DB failure (never raises)."""
@@ -135,21 +185,51 @@ def drain_notification_outbox(sb, limit=20):
     for row in rows:
         if (row.get("attempt_count") or 0) >= MAX_ATTEMPTS:
             continue
-        email = (row.get("payload") or {}).get("email")
-        if not email:
+        payload = row.get("payload") or {}
+        email = payload.get("email")
+        phone = payload.get("phone")
+        
+        if not email and not phone:
             failed += 1
             continue
+            
+        email_sent = False
+        whatsapp_sent = False
+        email_configured = True
+        
         try:
-            subject, html = render_email(row["event_key"], row.get("payload") or {})
-            if send_email(email, subject, html) is None:
-                continue  # not configured — leave queued
-            sb.table("notification_outbox").update({"processed_at": now}) \
-                .eq("id", row["id"]).execute()
-            sent += 1
+            product = payload.get("product") or "your catch"
+            # 1. Try sending email if email address present
+            if email:
+                subject, html = render_email(row["event_key"], payload)
+                resp = send_email(email, subject, html)
+                if resp is not None:
+                    email_sent = True
+                else:
+                    email_configured = False # Resend API key missing
+                    
+            # 2. Try sending WhatsApp if phone number present
+            if phone:
+                text = _whatsapp_text(row["event_key"], payload, product)
+                resp = send_whatsapp(phone, text)
+                if resp is not None and resp.status_code == 200:
+                    whatsapp_sent = True
+            
+            # If we successfully sent at least one channel, mark as processed.
+            if email_sent or whatsapp_sent:
+                sb.table("notification_outbox").update({"processed_at": now}) \
+                    .eq("id", row["id"]).execute()
+                sent += 1
+            elif not email_configured and not phone:
+                continue # leave queued for when email is configured
+            else:
+                raise RuntimeError("Failed to send on all available channels")
+                
         except Exception as e:
             failed += 1
             sb.table("notification_outbox").update({
                 "attempt_count": (row.get("attempt_count") or 0) + 1,
                 "last_error": str(e)[:500],
             }).eq("id", row["id"]).execute()
+            
     return {"sent": sent, "failed": failed}

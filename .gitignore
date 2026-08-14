@@ -14,3 +14,7 @@ dist
 # Python bytecode
 __pycache__/
 *.pyc
+
+# WhatsApp auth session info
+auth_info_baileys/
+
