@@ -217,7 +217,7 @@ export default function Admin() {
                     <div>
                       <p className="font-serif text-obsidian text-lg">{b.product_name} · {b.qty_kg} kg</p>
                       <p className="text-obsidian/50 text-[11px]">{b.user?.name} ({b.user?.email})</p>
-                      <p className="text-obsidian/50 text-[11px]">Delivery {b.pickup_date}{b.discount_percent > 0 && ` · ${b.discount_percent}% kudam discount`}</p>
+                      <p className="text-obsidian/50 text-[11px]">Delivery {b.pickup_date} · {b.delivery_window || "6:00 AM"}{b.discount_percent > 0 && ` · ${b.discount_percent}% kudam discount`}</p>
                     </div>
                     <p className="text-obsidian text-base">₹{b.amount.toLocaleString("en-IN")}</p>
                   </div>

@@ -420,7 +420,7 @@ export default function Dashboard() {
                       <div key={b.id} className="flex justify-between items-center border-b border-gold/15 pb-2" data-testid={`booking-row-${b.id}`}>
                         <div>
                           <p className="font-serif text-obsidian text-base">{b.product_name}</p>
-                          <p className="num text-obsidian/70 text-[12px]">{b.qty_kg} kg · {b.pickup_date}</p>
+                          <p className="num text-obsidian/70 text-[12px]">{b.qty_kg} kg · {b.pickup_date} · {b.delivery_window || "6:00 AM"}</p>
                         </div>
                         <div className="text-right">
                           <p className="num text-obsidian text-sm"><span className="rupee">₹</span>{b.amount.toLocaleString("en-IN")}</p>

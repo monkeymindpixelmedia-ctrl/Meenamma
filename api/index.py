@@ -235,6 +235,10 @@ def list_bookings(user: dict = Depends(get_current_user)):
 
 
 # ---------- Payments ----------
+DELIVERY_WINDOWS = ("6:00 AM", "7:00 AM")
+DEFAULT_DELIVERY_WINDOW = "6:00 AM"
+
+
 class OrderCreate(BaseModel):
     purpose: str
     amount: Optional[int] = Field(default=None, gt=0)
@@ -242,6 +246,7 @@ class OrderCreate(BaseModel):
     product_id: Optional[str] = None
     qty_kg: Optional[float] = None
     pickup_date: Optional[str] = None
+    delivery_window: Optional[str] = None
 
 
 class VerifyIn(BaseModel):
@@ -274,6 +279,9 @@ def create_order(body: OrderCreate, user: dict = Depends(get_current_user)):
     else:
         if not body.product_id or not body.qty_kg or not body.pickup_date:
             raise HTTPException(status_code=400, detail="product_id, qty_kg and pickup_date required")
+        window = body.delivery_window or DEFAULT_DELIVERY_WINDOW
+        if window not in DELIVERY_WINDOWS:
+            raise HTTPException(status_code=400, detail="delivery_window must be 6:00 AM or 7:00 AM")
         prows = sb.table("products").select("*").eq("id", body.product_id).neq("status", "archived").execute().data
         if not prows:
             raise HTTPException(status_code=404, detail="Product not found")
@@ -297,7 +305,7 @@ def create_order(body: OrderCreate, user: dict = Depends(get_current_user)):
             "subtotal_paise": round(base * 100), "discount_paise": round(base * 100) - amount * 100,
             "total_paise": amount * 100,
             "address_snapshot": {"pincode": user.get("pincode") or ""},
-            "delivery_slot_snapshot": {"delivery_date": body.pickup_date, "window": "6:00 AM"},
+            "delivery_slot_snapshot": {"delivery_date": body.pickup_date, "window": window},
             "policy_snapshot": {"discount_percent": discount_percent, "discount_kudam_id": discount_kudam_id},
         }).execute().data[0]
         sb.table("order_items").insert({

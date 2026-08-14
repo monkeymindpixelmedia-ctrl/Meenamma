@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { X } from "lucide-react";
+import { X, Check } from "lucide-react";
 import { api, payWithRazorpay, imgUrl, haptic } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 
@@ -18,9 +18,12 @@ export default function Market() {
   const [mode, setMode] = useState("book");
   const [qty, setQty] = useState(1);
   const [date, setDate] = useState(tomorrow());
+  const [win, setWin] = useState("6:00 AM");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [reward, setReward] = useState(null);
+  const [receipt, setReceipt] = useState(null);
+  const [provenance, setProvenance] = useState(null);
 
   useEffect(() => {
     api.get("/products").then(({ data }) => setProducts(data));
@@ -45,10 +48,10 @@ export default function Market() {
     setMsg("");
     try {
       await payWithRazorpay(
-        { purpose: "booking", product_id: p.id, qty_kg: Number(qty), pickup_date: date },
+        { purpose: "booking", product_id: p.id, qty_kg: Number(qty), pickup_date: date, delivery_window: win },
         user
       );
-      setMsg(`${p.name} pre-booked — it will be at your door by 6 AM on ${date}.`);
+      setReceipt({ product: p, date, win, mode: "book", qty, total: priceFor(p) });
       setSelected(null);
       if (user) api.get("/rewards/status").then(({ data }) => setReward(data)).catch(() => {});
     } catch (err) {
@@ -67,7 +70,7 @@ export default function Market() {
     setMsg("");
     try {
       await payWithRazorpay({ product_id: p.id, qty_kg: Number(qty) }, user, "/reservations/create-order");
-      setMsg(`${p.name} reserved with a 25% advance — you'll be the first to know when it lands. Track it on your dashboard.`);
+      setReceipt({ product: p, mode: "reserve", qty, advance: Math.max(1, Math.round(p.price_per_kg * qty * 0.25)) });
       setSelected(null);
     } catch (err) {
       setMsg(err.message || "Reservation failed");
@@ -115,20 +118,25 @@ export default function Market() {
                   <img 
                     src={imgUrl(p.image)} 
                     alt={p.name} 
-                    className="w-full h-full object-cover transform group-hover:scale-[1.03] transition-transform duration-1000 ease-[0.16,1,0.3,1] filter brightness-[0.95]" 
+                    onClick={() => setProvenance(p)}
+                    className="w-full h-full object-cover transform group-hover:scale-[1.03] transition-transform duration-1000 ease-[0.16,1,0.3,1] filter brightness-[0.95] cursor-pointer" 
                     loading="lazy" 
                   />
-                  {!p.available && (
-                    <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-md px-3 py-1 text-[9px] uppercase tracking-luxury text-obsidian">
-                      Off-Season
+                  {!p.available ? (
+                    <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-md px-3 py-1 text-[9px] uppercase tracking-luxury text-obsidian border-[0.5px] border-obsidian/10">
+                      Seasonal Reserve
                     </div>
-                  )}
+                  ) : p.price_per_kg >= 1000 ? (
+                    <div className="absolute top-4 right-4 bg-gold/90 backdrop-blur-md px-3 py-1 text-[9px] uppercase tracking-luxury text-white shadow-[0_0_15px_rgba(197,160,89,0.5)] animate-pulse">
+                      Limited Catch
+                    </div>
+                  ) : null}
                 </div>
                 <div className="p-8">
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="tamil text-gold-dim text-sm">{p.tamil_name}</p>
-                      <h2 className="font-serif text-obsidian text-3xl font-medium leading-tight mt-1">{p.name}</h2>
+                      <h2 className="font-serif text-obsidian text-3xl font-medium leading-tight mt-1 cursor-pointer hover:text-gold transition-colors" onClick={() => setProvenance(p)}>{p.name}</h2>
                     </div>
                     <p className="num-lg text-obsidian text-xl whitespace-nowrap">
                       <span className="rupee">₹</span>{p.price_per_kg.toLocaleString("en-IN")}<span className="text-obsidian/40 text-xs font-sans font-normal"> / kg</span>
@@ -192,6 +200,26 @@ export default function Market() {
                     <input className="input-minimal mt-2" type="date" value={date} min={tomorrow()} onChange={(e) => setDate(e.target.value)} data-testid="booking-date-input" />
                   </div>
                 )}
+                {mode === "book" && (
+                  <div className="flex-1">
+                    <label className="text-obsidian/40 text-[9px] uppercase tracking-[0.25em]">Delivery slot</label>
+                    <div className="flex gap-2 mt-2">
+                      {["6:00 AM", "7:00 AM"].map((w) => (
+                        <button
+                          type="button"
+                          key={w}
+                          onClick={() => { haptic(); setWin(w); }}
+                          data-testid={`slot-${w.replace(" ", "-")}`}
+                          className={`flex-1 py-2.5 text-[11px] border transition-all duration-300 ${
+                            win === w ? "border-gold bg-gold/10 text-obsidian font-semibold" : "border-obsidian/15 text-obsidian/60"
+                          }`}
+                        >
+                          {w}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {mode === "reserve" && (
@@ -229,6 +257,127 @@ export default function Market() {
               >
                 {busy ? "Speaking to the boat…" : mode === "reserve" ? `Reserve · Pay ₹${Math.max(1, Math.round(selected.price_per_kg * qty * 0.25)).toLocaleString("en-IN")}` : "Confirm & Pay"}
               </button>
+            </motion.div>
+          </>
+        )}
+
+        {provenance && (
+          <>
+            <motion.div
+              className="fixed inset-0 bg-obsidian/30 backdrop-blur-sm z-40"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4 }}
+              onClick={() => setProvenance(null)}
+            />
+            <motion.div
+              initial={{ x: "100%", opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: "100%", opacity: 0 }}
+              transition={{ type: "spring", stiffness: 70, damping: 20, mass: 1 }}
+              className="fixed inset-y-0 right-0 w-full md:max-w-md bg-alabaster border-l-[0.5px] border-obsidian/10 z-50 p-8 shadow-2xl overflow-y-auto flex flex-col"
+              data-testid="provenance-drawer"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-obsidian/40 text-[9px] uppercase tracking-[0.25em]">The Story of the Catch</p>
+                  <h3 className="font-serif text-obsidian text-3xl font-medium mt-1">{provenance.name}</h3>
+                </div>
+                <button onClick={() => setProvenance(null)} className="text-obsidian/40 hover:text-obsidian transition-colors p-2 -mr-2 -mt-2">
+                  <X size={20} strokeWidth={1.5} />
+                </button>
+              </div>
+              <div className="mt-8 relative aspect-[4/3] overflow-hidden">
+                <img src={imgUrl(provenance.image)} alt={provenance.name} className="w-full h-full object-cover filter brightness-[0.9]" />
+              </div>
+              <div className="mt-8 space-y-6">
+                <div>
+                  <p className="text-obsidian/40 text-[9px] uppercase tracking-[0.25em] mb-2">Provenance</p>
+                  <p className="font-serif text-obsidian/80 text-lg italic leading-relaxed border-l border-gold pl-4">
+                    Sourced from the deep waters off the Coromandel Coast. Our multi-generational artisanal fishermen set out at dusk to guarantee this catch lands at your door before dawn.
+                  </p>
+                </div>
+                <div>
+                  <p className="text-obsidian/40 text-[9px] uppercase tracking-[0.25em] mb-2">Flavor Profile</p>
+                  <p className="text-obsidian/70 text-sm leading-relaxed">{provenance.story || "A delicate, premium texture with a flavor that honors the sea."}</p>
+                </div>
+                <div>
+                  <p className="text-obsidian/40 text-[9px] uppercase tracking-[0.25em] mb-2">Handling</p>
+                  <p className="text-obsidian/70 text-sm leading-relaxed">{provenance.handling || "Zero breaks in the cold chain. Handled with absolute respect."}</p>
+                </div>
+              </div>
+              <button
+                className="btn-obsidian w-full mt-auto pt-8"
+                onClick={() => { setProvenance(null); setSelected(provenance); setMode(provenance.available ? "book" : "reserve"); setMsg(""); }}
+              >
+                {provenance.available ? "Pre-Book" : "Reserve"}
+              </button>
+            </motion.div>
+          </>
+        )}
+
+        {receipt && (
+          <>
+            <motion.div
+              className="fixed inset-0 bg-obsidian/90 backdrop-blur-md z-[60] flex items-center justify-center p-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.5 }}
+            >
+              <motion.div
+                initial={{ y: 20, opacity: 0, scale: 0.95 }}
+                animate={{ y: 0, opacity: 1, scale: 1 }}
+                exit={{ y: 20, opacity: 0, scale: 0.95 }}
+                transition={{ type: "spring", stiffness: 80, damping: 20, delay: 0.2 }}
+                className="bg-alabaster paper-texture w-full max-w-sm p-8 shadow-2xl relative overflow-hidden"
+              >
+                <div className="absolute top-0 left-0 w-full h-1 bg-gold"></div>
+                <div className="flex justify-center mb-6 text-gold">
+                  <Check size={40} strokeWidth={1} />
+                </div>
+                <h3 className="font-serif text-obsidian text-3xl font-medium text-center leading-tight mb-2">
+                  {receipt.mode === "reserve" ? "Reservation Confirmed" : "Catch Confirmed"}
+                </h3>
+                <p className="text-obsidian/40 text-[10px] uppercase tracking-[0.3em] text-center mb-8">
+                  Meenamma &middot; The Ritual of the Sea
+                </p>
+                
+                <div className="border-t-[0.5px] border-obsidian/20 border-dashed py-6 space-y-4">
+                  <div className="flex justify-between items-start">
+                    <span className="text-obsidian/60 text-xs tracking-[0.2em] uppercase">Item</span>
+                    <span className="text-obsidian text-sm text-right font-medium">{receipt.product.name}<br/><span className="text-obsidian/40 text-[10px]">{receipt.qty} kg</span></span>
+                  </div>
+                  {receipt.mode === "book" && (
+                    <div className="flex justify-between items-start">
+                      <span className="text-obsidian/60 text-xs tracking-[0.2em] uppercase">Delivery</span>
+                      <span className="text-obsidian text-sm text-right font-medium">{receipt.win}<br/><span className="text-obsidian/40 text-[10px]">{receipt.date}</span></span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-start">
+                    <span className="text-obsidian/60 text-xs tracking-[0.2em] uppercase">Paid</span>
+                    <span className="text-obsidian text-sm font-medium num">
+                      ₹{receipt.mode === "reserve" ? receipt.advance.toLocaleString("en-IN") : receipt.total.toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="border-t-[0.5px] border-obsidian/20 border-dashed pt-6 pb-2">
+                  <p className="text-obsidian/60 font-serif italic text-sm text-center">
+                    {receipt.mode === "reserve" 
+                      ? "You'll be notified the moment it lands." 
+                      : "We will wake before dawn so you don't have to."}
+                  </p>
+                </div>
+                
+                <button
+                  className="w-full mt-8 border border-obsidian/10 py-3 text-[10px] uppercase tracking-[0.2em] text-obsidian/60 hover:bg-obsidian/5 hover:text-obsidian transition-colors"
+                  onClick={() => setReceipt(null)}
+                >
+                  Return to Market
+                </button>
+              </motion.div>
             </motion.div>
           </>
         )}
