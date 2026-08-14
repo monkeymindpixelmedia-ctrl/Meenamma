@@ -215,6 +215,11 @@ def delete_kudam(kudam_id: str, user: dict = Depends(get_current_user)):
     if not rows:
         raise HTTPException(status_code=404, detail="Kudam not found")
     k = rows[0]
+    if k["status"] == "active" and user.get("autopay_status") == "active":
+        active_vessels = sb.table("kudams").select("id").eq("profile_id", user["id"]).eq("status", "active").execute().data
+        if len(active_vessels) <= 1:
+            raise HTTPException(status_code=400,
+                                detail="Cannot delete the last vessel while an active savings ladder is running. Stop the savings ladder first.")
     if k["saved_paise"] > 0:
         raise HTTPException(status_code=400,
                             detail="This kudam holds savings. Spend or redeem it before deleting.")

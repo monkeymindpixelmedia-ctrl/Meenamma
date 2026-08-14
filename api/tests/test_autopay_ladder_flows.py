@@ -28,6 +28,10 @@ class MemoryQuery:
         self.filters.append(("eq", column, value))
         return self
 
+    def neq(self, column, value):
+        self.filters.append(("neq", column, value))
+        return self
+
     def is_(self, column, value):
         self.filters.append(("is", column, value))
         return self
@@ -44,6 +48,10 @@ class MemoryQuery:
         self.operation = ("insert", deepcopy(row))
         return self
 
+    def delete(self):
+        self.operation = ("delete", None)
+        return self
+
     def update(self, values):
         self.operation = ("update", deepcopy(values))
         return self
@@ -55,6 +63,8 @@ class MemoryQuery:
     def _matches(self, row):
         for kind, column, value in self.filters:
             if kind == "eq" and row.get(column) != value:
+                return False
+            if kind == "neq" and row.get(column) == value:
                 return False
             if kind == "is" and value == "null" and row.get(column) is not None:
                 return False
@@ -95,6 +105,10 @@ class MemoryQuery:
             rows.append(values)
             return SimpleNamespace(data=[deepcopy(values)])
         matched = [row for row in rows if self._matches(row)]
+        if operation == "delete":
+            for row in matched:
+                rows.remove(row)
+            return SimpleNamespace(data=deepcopy(matched))
         if operation == "update":
             for row in matched:
                 row.update(values)
@@ -529,3 +543,32 @@ def test_cron_requires_configured_bearer_secret(monkeypatch):
 
     index.require_cron(SimpleNamespace(
         headers={"Authorization": "Bearer correct-secret"}))
+
+
+def test_delete_kudam_last_vessel_autopay_blocked(monkeypatch):
+    db = MemorySupabase(
+        kudams=[
+            {"id": "k1", "profile_id": "u1", "status": "active", "saved_paise": 0, "goal_paise": 1000},
+        ],
+        kudam_payment_attempts=[]
+    )
+    monkeypatch.setattr(index, "sb", db)
+
+    # Autopay active, last vessel deletion is blocked
+    with pytest.raises(index.HTTPException) as blocked:
+        index.delete_kudam("k1", {"id": "u1", "autopay_status": "active"})
+    assert blocked.value.status_code == 400
+    assert "Cannot delete the last vessel" in blocked.value.detail
+
+    # With multiple active vessels, deletion goes through
+    db2 = MemorySupabase(
+        kudams=[
+            {"id": "k1", "profile_id": "u1", "status": "active", "saved_paise": 0, "goal_paise": 1000},
+            {"id": "k2", "profile_id": "u1", "status": "active", "saved_paise": 0, "goal_paise": 1000},
+        ],
+        kudam_payment_attempts=[]
+    )
+    monkeypatch.setattr(index, "sb", db2)
+    index.delete_kudam("k1", {"id": "u1", "autopay_status": "active"})
+    assert len(db2.rows["kudams"]) == 1
+    assert db2.rows["kudams"][0]["id"] == "k2"

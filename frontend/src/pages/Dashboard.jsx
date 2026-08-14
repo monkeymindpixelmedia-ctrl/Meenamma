@@ -206,6 +206,10 @@ export default function Dashboard() {
 
   const deleteKudam = async (k) => {
     haptic();
+    if (user?.autopay_status === "active" && kudams?.filter((x) => x.status === "active").length <= 1) {
+      alert("Cannot delete the last vessel while an active savings ladder is running. Stop the savings ladder first.");
+      return;
+    }
     if (!window.confirm(`Delete "${k.name}" forever? This cannot be undone.`)) return;
     setBusy(true);
     setMsg("");
