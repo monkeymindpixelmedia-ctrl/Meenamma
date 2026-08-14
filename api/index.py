@@ -161,18 +161,32 @@ def profile_updates(body: ProfileIn) -> dict:
 async def bootstrap_profile(body: ProfileIn,
                             auth_session: SessionContainer = Depends(bootstrap_session)):
     user_id, email = await session_identity(auth_session)
-    upd = {"id": user_id, "email": email, **profile_updates(body)}
-    sb.table("profiles").upsert(upd, on_conflict="id").execute()
-    
+    upd = {**profile_updates(body), "email": email}
+
+    # Check if a profile already exists for this user_id
+    existing = sb.table("profiles").select("id").eq("id", user_id).execute().data
+    if existing:
+        sb.table("profiles").update(upd).eq("id", user_id).execute()
+        profile_id = user_id
+    else:
+        # Check if the email already belongs to a profile from a different auth core
+        by_email = sb.table("profiles").select("id").eq("email", email).execute().data
+        if by_email:
+            profile_id = by_email[0]["id"]
+            sb.table("profiles").update(upd).eq("id", profile_id).execute()
+        else:
+            sb.table("profiles").insert({"id": user_id, **upd}).execute()
+            profile_id = user_id
+
     # Idempotent first Kudam creation
-    existing = sb.table("kudams").select("id").eq("profile_id", user_id).execute().data
-    if not existing:
+    existing_kudam = sb.table("kudams").select("id").eq("profile_id", profile_id).execute().data
+    if not existing_kudam:
         sb.table("kudams").insert({
-            "profile_id": user_id,
+            "profile_id": profile_id,
             "name": "First Vessel",
             "goal_paise": 1000 * 100
         }).execute()
-        
+
     return {"ok": True}
 
 
