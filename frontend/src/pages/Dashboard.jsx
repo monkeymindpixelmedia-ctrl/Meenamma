@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Trash2 } from "lucide-react";
 import { SavingsMandala } from "../components/SavingsMandala";
 import { useAuth } from "../context/AuthContext";
-import { api, payWithRazorpay, setupAutopay, formatApiErrorDetail, imgUrl, haptic } from "../lib/api";
+import { api, payWithRazorpay, setupAutopay, createAutopayPaymentLink, formatApiErrorDetail, imgUrl, haptic } from "../lib/api";
 
 const QUICK = [100, 250, 500, 1000];
 
@@ -140,23 +140,51 @@ export default function Dashboard() {
   const [celebrate, setCelebrate] = useState(null);
   const [success, setSuccess] = useState("");
 
+  const [stepAmount, setStepAmount] = useState(user?.step_amount || 5);
+  const [customStepOpen, setCustomStepOpen] = useState(false);
+  const [customStepVal, setCustomStepVal] = useState("");
+  const [cadence, setCadence] = useState(user?.autopay_cadence || "weekly");
+  const [autopay, setAutopay] = useState(null);
+
   const load = useCallback(async () => {
-    const [{ data: ks }, { data: bs }, { data: ps }, { data: rw }, { data: rs }] = await Promise.all([
-      api.get("/kudams"), api.get("/bookings"), api.get("/products"), api.get("/rewards/status"), api.get("/reservations"),
-    ]);
-    setKudams(ks);
-    setBookings(bs);
-    setProducts(ps.slice(0, 3));
-    setReward(rw);
-    setReservations(rs);
-    setActiveId((prev) => prev || (ks[0] && ks[0].id));
+    // 1. Fetch essential dashboard data first to make page load feel instantaneous
+    try {
+      const [{ data: ks }, { data: bs }, { data: ap }] = await Promise.all([
+        api.get("/kudams"),
+        api.get("/bookings"),
+        api.get("/autopay")
+      ]);
+      setKudams(ks);
+      setBookings(bs);
+      setAutopay(ap);
+      setActiveId((prev) => prev || (ks[0] && ks[0].id));
+    } catch (err) {
+      console.error("Essential dashboard load failed:", err);
+    }
+
+    // 2. Fetch secondary data in the background without blocking the UI
+    try {
+      const [{ data: ps }, { data: rw }, { data: rs }] = await Promise.all([
+        api.get("/products"),
+        api.get("/rewards/status"),
+        api.get("/reservations")
+      ]);
+      setProducts(ps.slice(0, 3));
+      setReward(rw);
+      setReservations(rs);
+    } catch (err) {
+      console.error("Secondary dashboard load failed:", err);
+    }
   }, []);
 
-  useEffect(() => { load().catch(() => {}); }, [load]);
+  useEffect(() => {
+    load().catch(() => {});
+  }, [load]);
 
   const active = kudams?.find((k) => k.id === activeId);
   const progress = active ? Math.min(active.saved_amount / active.goal_amount, 1) : 0;
   const plan = user?.daily_plan || 5;
+  const hasActiveKudam = kudams?.some((k) => k.status === "active");
 
   const createKudam = async (e) => {
     e.preventDefault();
@@ -210,16 +238,37 @@ export default function Dashboard() {
     }
   };
 
-  const simulateToday = async () => {
-    if (!active) return;
+
+  const enableAutopay = async () => {
     haptic();
     setBusy(true);
     setMsg("");
     try {
-      const { data } = await api.post(`/kudams/${active.id}/simulate-deposit`, {});
-      if (data.kudam && data.kudam.status === "complete") setCelebrate(data.kudam.name);
-      else setSuccess(`₹${plan} poured into ${active.name} (simulated day).`);
-      await load();
+      const updated = await setupAutopay(user, { stepAmount, cadence });
+      updateUser(updated);
+      setAutopay(updated.autopay);
+      setSuccess(cadence === "manual"
+        ? "Manual savings selected — pay the accrued balance whenever you are ready."
+        : `Automatic savings active — settled ${cadence}.`);
+    } catch (err) {
+      setMsg(err.message || "Autopay setup failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelAutopay = async () => {
+    if (!window.confirm("Stop this savings ladder? Any unsettled amount will remain due.")) return;
+    haptic();
+    setBusy(true);
+    setMsg("");
+    try {
+      const { data: updated } = await api.post("/autopay/cancel");
+      const { data: state } = await api.get("/autopay");
+      updateUser(updated);
+      setAutopay(state);
+      setCadence("manual");
+      setSuccess("Savings ladder stopped. Your accrued balance remains available to settle.");
     } catch (err) {
       setMsg(formatApiErrorDetail(err.response?.data?.detail) || err.message);
     } finally {
@@ -227,20 +276,60 @@ export default function Dashboard() {
     }
   };
 
-  const enableAutopay = async () => {
+  const payAccruedBalance = async () => {
     haptic();
     setBusy(true);
     setMsg("");
     try {
-      const updated = await setupAutopay(user);
-      updateUser(updated);
-      setSuccess(`UPI Autopay active — ₹${plan} flows in every dawn.`);
+      const link = await createAutopayPaymentLink();
+      window.location.assign(link.url);
     } catch (err) {
-      setMsg(err.message || "Autopay setup failed");
-    } finally {
+      setMsg(err.message || "Unable to create the payment link");
       setBusy(false);
     }
   };
+
+  const handleCustomStepChange = (val) => {
+    const parsed = parseInt(val, 10);
+    setCustomStepVal(val);
+    if (!isNaN(parsed) && parsed > 0 && parsed <= 100) {
+      setStepAmount(parsed);
+    }
+  };
+
+  const selectPredefinedStep = (amt) => {
+    haptic();
+    setCustomStepOpen(false);
+    setStepAmount(amt);
+  };
+
+  const previewStep = stepAmount;
+  const previewCadence = cadence;
+  const savingsActive = user?.autopay_status === "active";
+  const LADDER_STEPS = [1, 5, 10];
+  const CADENCES = ["daily", "weekly", "monthly", "manual"];
+  const cadenceLabel = (c) => {
+    if (c === "daily") return "Daily";
+    if (c === "weekly") return "Weekly";
+    if (c === "monthly") return "Monthly";
+    return "Manual";
+  };
+  const inr = (val) => val.toLocaleString("en-IN");
+
+  useEffect(() => {
+    if (autopay) {
+      if (autopay.step_amount) {
+        setStepAmount(autopay.step_amount);
+        if (![1, 5, 10].includes(autopay.step_amount)) {
+          setCustomStepOpen(true);
+          setCustomStepVal(String(autopay.step_amount));
+        }
+      }
+      if (autopay.cadence) {
+        setCadence(autopay.cadence);
+      }
+    }
+  }, [autopay]);
 
   const completeReservation = async (r) => {
     haptic();
@@ -278,7 +367,10 @@ export default function Dashboard() {
         </div>
 
         {kudams === null ? (
-          <p className="text-center text-obsidian/50 font-serif italic mt-24">Preparing the vessel…</p>
+          <div className="flex flex-col items-center justify-center py-24 gap-4 animate-pulse">
+            <div className="h-10 w-10 rounded-full border-t-2 border-gold border-r-2 border-transparent animate-spin"></div>
+            <p className="text-center text-obsidian/50 font-serif italic" style={{ letterSpacing: "0.05em" }}>Preparing the vessel…</p>
+          </div>
         ) : kudams.length === 0 && !showCreate ? (
           <div className="flex flex-col items-center mt-14 text-center">
             <SavingsMandala progress={0} size={220} />
@@ -313,15 +405,7 @@ export default function Dashboard() {
                     <button className="btn-obsidian w-full md:w-auto mt-4 hidden md:inline-block" onClick={() => deposit(plan)} disabled={busy} data-testid="pay-daily-btn">
                       {busy ? "Opening the till…" : `Pay ₹${plan} today`}
                     </button>
-                    <button
-                      className="w-full md:w-auto mt-3 md:ml-3 py-3 px-5 border border-gold/40 text-obsidian/70 text-[10px] uppercase hover:bg-gold/10 transition-colors duration-300"
-                      style={{ letterSpacing: "0.2em" }}
-                      onClick={simulateToday}
-                      disabled={busy}
-                      data-testid="simulate-deposit-btn"
-                    >
-                      Simulate today's ₹{plan} (demo)
-                    </button>
+
                     <div className="flex flex-wrap gap-2 mt-5">
                       {QUICK.map((q) => (
                         <button
@@ -356,32 +440,137 @@ export default function Dashboard() {
             {/* Right column: vessels + rewards */}
             <aside className="space-y-6">
               <div className="card-white p-6" data-testid="autopay-card">
-                <p className="text-gold-dim text-[10px] uppercase mb-3" style={{ letterSpacing: "0.35em" }}>UPI Autopay</p>
-                {user?.autopay_status === "active" ? (
-                  <div className="flex items-center gap-2">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gold opacity-70" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-gold" />
-                    </span>
-                    <p className="text-obsidian text-sm" data-testid="autopay-active-label">Active — ₹{plan} × 7 is debited weekly and lands in your kudam.</p>
-                  </div>
-                ) : (
+                <p className="text-gold-dim text-[10px] uppercase" style={{ letterSpacing: "0.35em" }}>Kudam savings ladder</p>
+                <p className="text-obsidian/70 text-xs leading-5 mt-2 font-serif italic">
+                  Your saving grows every day. Cadence changes when the balance is settled, never how it grows.
+                </p>
+
+                {!savingsActive && (
                   <>
-                    <p className="text-obsidian/75 text-xs leading-5">
-                      Set a one-time UPI mandate and ₹{plan} × 7 pours into your kudam every week — no taps needed. (UPI autopay debits weekly at minimum.)
-                    </p>
-                    <button className="btn-gold-outline w-full mt-4 !py-2.5" onClick={enableAutopay} disabled={busy} data-testid="enable-autopay-btn">
-                      Enable Autopay ₹{plan}/day (billed weekly)
-                    </button>
+                    <fieldset className="mt-4">
+                      <legend className="text-obsidian/55 text-[9px] uppercase" style={{ letterSpacing: "0.2em" }}>Daily step</legend>
+                      <div className="grid grid-cols-4 gap-2 mt-2">
+                        {LADDER_STEPS.map((step) => (
+                          <button
+                            type="button"
+                            key={step}
+                            onClick={() => selectPredefinedStep(step)}
+                            aria-pressed={stepAmount === step && !customStepOpen}
+                            className={`py-2 text-xs border transition-colors ${stepAmount === step && !customStepOpen
+                              ? "border-obsidian bg-obsidian text-gold-shimmer font-mono"
+                              : "border-gold/35 text-obsidian/70"}`}
+                            data-testid={`autopay-step-${step}`}
+                          >
+                            +₹{step}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => { haptic(); setCustomStepOpen(true); }}
+                          aria-pressed={customStepOpen}
+                          className={`py-2 text-xs border transition-colors ${customStepOpen
+                            ? "border-obsidian bg-obsidian text-gold-shimmer font-mono"
+                            : "border-gold/35 text-obsidian/70"}`}
+                          data-testid="autopay-step-custom"
+                        >
+                          Custom
+                        </button>
+                      </div>
+                      {customStepOpen && (
+                        <div className="mt-2">
+                          <input
+                            type="number"
+                            min="1"
+                            max="100"
+                            className="input-minimal text-center font-mono"
+                            placeholder="Enter amount (₹1 - ₹100)"
+                            value={customStepVal}
+                            onChange={(e) => handleCustomStepChange(e.target.value)}
+                            data-testid="custom-step-input"
+                          />
+                        </div>
+                      )}
+                    </fieldset>
+                    <fieldset className="mt-4">
+                      <legend className="text-obsidian/55 text-[9px] uppercase" style={{ letterSpacing: "0.2em" }}>Settle</legend>
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        {CADENCES.map((item) => (
+                          <button
+                            type="button"
+                            key={item}
+                            onClick={() => { haptic(); setCadence(item); }}
+                            aria-pressed={cadence === item}
+                            className={`py-2 text-xs border transition-colors ${cadence === item
+                              ? "border-gold bg-alabaster text-obsidian font-serif italic"
+                              : "border-gold/25 text-obsidian/60"}`}
+                            data-testid={`autopay-cadence-${item}`}
+                          >
+                            {cadenceLabel(item)}
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
                   </>
                 )}
+
+                <div className="grid grid-cols-2 gap-px bg-gold/20 border border-gold/20 mt-4" data-testid="ladder-preview">
+                  {[["Day 1", previewStep], ["Day 2", previewStep * 2], ["Day 30", previewStep * 30], ["30-day total", previewStep * 465]].map(([label, value]) => (
+                    <div className="bg-white p-3" key={label}>
+                      <p className="text-obsidian/50 text-[9px] uppercase" style={{ letterSpacing: "0.12em" }}>{label}</p>
+                      <p className="num text-obsidian text-base mt-1">₹{inr(value)}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {savingsActive && autopay ? (
+                  <div className="mt-4">
+                    <div className="flex items-center gap-2">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gold opacity-70" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-gold" />
+                      </span>
+                      <p className="text-obsidian text-sm" data-testid="autopay-active-label">
+                        Active · {cadenceLabel(previewCadence)}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+                      <div className="bg-alabaster/60 p-2" data-testid="autopay-cycle-day">
+                        <p className="text-obsidian/50 text-[8px] uppercase">Cycle day</p>
+                        <p className="num text-obsidian text-sm">{autopay.cycle_day || "—"}</p>
+                      </div>
+                      <div className="bg-alabaster/60 p-2" data-testid="autopay-next-amount">
+                        <p className="text-obsidian/50 text-[8px] uppercase">Next amount</p>
+                        <p className="num text-obsidian text-sm">₹{inr(autopay.next_amount || 0)}</p>
+                      </div>
+                      <div className="bg-alabaster/60 p-2" data-testid="autopay-unsettled-amount">
+                        <p className="text-obsidian/50 text-[8px] uppercase">Unsettled</p>
+                        <p className="num text-obsidian text-sm">₹{inr(autopay.unsettled_amount || 0)}</p>
+                      </div>
+                    </div>
+                    {(autopay.unsettled_amount || 0) > 0 && (
+                      <button className="btn-obsidian w-full mt-3 !py-2.5" onClick={payAccruedBalance} disabled={busy} data-testid="manual-payment-btn">
+                        Pay accrued ₹{inr(autopay.unsettled_amount)}
+                      </button>
+                    )}
+                    <button className="w-full mt-3 text-obsidian/55 text-[9px] uppercase underline underline-offset-4" onClick={cancelAutopay} disabled={busy} data-testid="cancel-autopay-btn">
+                      Stop this savings ladder
+                    </button>
+                  </div>
+                ) : (
+                  <button className="btn-gold-outline w-full mt-4 !py-2.5" onClick={enableAutopay} disabled={busy} data-testid="enable-autopay-btn">
+                    {busy ? "Preparing…" : cadence === "manual" ? "Start manual savings" : "Continue to subscription"}
+                  </button>
+                )}
+                {msg && <p className="text-obsidian text-xs italic font-serif mt-3" data-testid="autopay-msg">{msg}</p>}
               </div>
               <div className="card-white p-6">
                 <div className="flex items-center justify-between mb-4">
                   <p className="text-gold-dim text-[10px] uppercase" style={{ letterSpacing: "0.35em" }}>Your vessels</p>
-                  <button onClick={() => setShowCreate((s) => !s)} className="text-obsidian flex items-center gap-1 text-[10px] uppercase" style={{ letterSpacing: "0.2em" }} data-testid="new-kudam-btn">
-                    <Plus size={14} /> New
-                  </button>
+                  {!hasActiveKudam && (
+                    <button onClick={() => setShowCreate((s) => !s)} className="text-obsidian flex items-center gap-1 text-[10px] uppercase" style={{ letterSpacing: "0.2em" }} data-testid="new-kudam-btn">
+                      <Plus size={14} /> New
+                    </button>
+                  )}
                 </div>
                 <div className="space-y-3">
                   {kudams.map((k) => (

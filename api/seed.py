@@ -133,7 +133,9 @@ def _emailpassword_identity(email, password):
         if len(matches) != 1:
             raise RuntimeError(f"Expected one email/password identity for {email}; found {len(matches)}")
         user, recipe_user_id = matches[0]
-        recipe_user_id = RecipeUserId(recipe_user_id)
+        recipe_user_id = RecipeUserId(
+            recipe_user_id if isinstance(recipe_user_id, str)
+            else recipe_user_id.get_as_string())
     else:
         raise RuntimeError(f"Failed to create email/password identity for {email}: {result!r}")
 

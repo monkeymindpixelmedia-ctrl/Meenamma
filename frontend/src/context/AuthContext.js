@@ -14,11 +14,6 @@ export function AuthProvider({ children }) {
       setUser(false);
       return false;
     }
-    const verification = await EmailVerification.isEmailVerified();
-    if (!verification.isVerified) {
-      setUser(false);
-      return false;
-    }
     const { data } = await api.get("/auth/me");
     setUser(data);
     return data;
@@ -38,11 +33,6 @@ export function AuthProvider({ children }) {
     if (response.status === "FIELD_ERROR") throw new Error(response.formFields.map((field) => field.error).join(" "));
     if (response.status === "WRONG_CREDENTIALS_ERROR") throw new Error("Invalid email or password");
     if (response.status === "SIGN_IN_NOT_ALLOWED") throw new Error(response.reason);
-    const verification = await EmailVerification.isEmailVerified();
-    if (!verification.isVerified) {
-      setUser(false);
-      return { verificationRequired: true };
-    }
     return refreshUser();
   };
 
@@ -61,8 +51,7 @@ export function AuthProvider({ children }) {
       pincode: extra.pincode || "",
       upi_id: extra.upi_id || "",
     });
-    setUser(false);
-    return { verificationRequired: true };
+    return refreshUser();
   };
 
   const updateUser = (data) => setUser(data);

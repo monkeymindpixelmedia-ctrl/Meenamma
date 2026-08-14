@@ -1,0 +1,5 @@
+5	T5	engineer	locale backend + Profile toggle + Market lang fetch	committed in aba6bac (auth restore + outbox + T5 verified)
+6	FIX	engineer	restore Supabase-JWKS auth + outbox notifications (revert parallel supertokens/resend regression)	67/67 suite
+7	FIX	engineer	revert half-applied supertokens-auth-react frontend; coherent supabase auth	build green
+8	T7	engineer	DELETE /kudams/{id} + Dashboard delete UI + tests	4 new tests, 67/67 suite
+9	PUSH	ops	push swe/20260814 to origin	fb22897 pushed

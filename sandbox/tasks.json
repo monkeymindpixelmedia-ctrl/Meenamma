@@ -1,19 +1,96 @@
 {
   "project": "meenamma",
+  "objective": "Replace fixed-amount Razorpay Subscription autopay with a UPI Autopay mandate plus daily escalating recurring debit that steps by daily_plan each day and resets every 30 days.",
   "environment": {
-    "test_command": "$env:REACT_APP_BACKEND_URL='http://localhost:8000'; python -m pytest api/tests"
+    "test_command": "source scripts/env.sh && python -m pytest api/tests -q",
+    "notes": "Run `source scripts/env.sh` first; it maps Meenamma/.env NEXT_PUBLIC_* names onto the names the API and pytest expect. Full suite takes ~5m35s. Baseline is 74 passed, 1 failed (test_webhook_subscription_unknown_ignored), which T1 fixes."
   },
-  "order": ["T1"],
+  "order": ["T1", "T2", "T3", "T4", "T5", "T6"],
   "tasks": {
     "T1": {
       "id": "T1",
-      "title": "Migrate seed.py to SuperTokens",
-      "description": "Refactor api/seed.py so that it creates the admin and demo users in SuperTokens using the emailpassword recipe instead of Supabase Auth. After creating the SuperTokens user, it should also upsert their profile into the Supabase profiles table to maintain relational integrity.",
+      "title": "Fix the failing webhook mock so the suite is green at baseline",
+      "description": "api/tests/test_webhook.py::test_webhook_subscription_unknown_ignored fails with AttributeError: 'dict' object has no attribute 'data' at api/index.py:539. The test's fake Supabase query object returns a plain dict from execute() for the kudam_deposits dedupe lookup, but _credit_autopay_deposit reads .data on it. Make the fake return the same shape the real client returns (an object exposing .data) for every table the code touches, so the whole suite is green before any feature work lands. Do not change api/index.py for this task.",
       "acceptance_criteria": [
-        "seed.py successfully executes without errors",
-        "admin@meenamma.in and demo@meenamma.in can be authenticated locally"
+        "source scripts/env.sh && python -m pytest api/tests -q reports 0 failures",
+        "test_webhook_subscription_unknown_ignored still asserts that an untracked subscription id credits nothing"
       ],
+      "files": ["api/tests/test_webhook.py"],
       "depends_on": []
+    },
+    "T2": {
+      "id": "T2",
+      "title": "Add mandate and daily-debit schema",
+      "description": "New migration supabase/migration/20260814000015_m15_autopay_mandate.sql. On profiles add: autopay_token_id text, autopay_customer_id text, autopay_max_amount_paise integer, autopay_started_on date, autopay_step_paise integer. Extend the autopay_status check constraint to keep ('none','pending','active','paused','cancelled') and add 'failed'. New table autopay_debits: id uuid pk default gen_random_uuid(), profile_id uuid references profiles(id), debit_date date not null, cycle_day integer not null check (cycle_day between 1 and 30), amount_paise integer not null check (amount_paise > 0), razorpay_order_id text, provider_payment_id text, status text not null default 'pending' check (status in ('pending','captured','failed','skipped')), error text, created_at timestamptz default now(), unique (profile_id, debit_date). Index on (status, debit_date). Enable RLS matching the pattern used by the other tables in this repo: a profile reads only its own debit rows, the service role has full access. Keep the existing autopay_subscription_id column in place so T6 can migrate legacy rows off it.",
+      "acceptance_criteria": [
+        "Migration file is valid SQL and follows the naming and RLS conventions of the existing files in supabase/migration/",
+        "unique (profile_id, debit_date) exists so a re-run of the daily job cannot double-debit",
+        "Full suite stays green"
+      ],
+      "files": ["supabase/migration/20260814000015_m15_autopay_mandate.sql"],
+      "depends_on": ["T1"]
+    },
+    "T3": {
+      "id": "T3",
+      "title": "Ladder helper: pure amount calculation",
+      "description": "Add a pure function to api/index.py that computes the debit for a given day, with no I/O so it is cheap to test exhaustively: autopay_debit_paise(step_paise: int, started_on: date, on_date: date) -> int. day_index = (on_date - started_on).days + 1; cycle_day = ((day_index - 1) % 30) + 1; return step_paise * cycle_day. Return 0 when on_date is before started_on. Also add autopay_max_amount_paise(step_paise) -> step_paise * 30. Keep both under the repo's function-length norm and give the docstring the worked ladder from sandbox/plan.md so the next reader does not have to rederive it.",
+      "acceptance_criteria": [
+        "step 500 paise (Rs 5): day 1 gives 500, day 2 gives 1000, day 30 gives 15000, day 31 wraps back to 500, day 60 gives 15000",
+        "A date before started_on gives 0",
+        "Every value the ladder can produce is <= autopay_max_amount_paise(step_paise), asserted across a full 90-day sweep",
+        "Full suite stays green"
+      ],
+      "files": ["api/index.py", "api/tests/test_autopay_ladder.py"],
+      "depends_on": ["T2"]
+    },
+    "T4": {
+      "id": "T4",
+      "title": "Mandate registration and confirmation endpoints",
+      "description": "Replace the Subscriptions-based autopay in api/index.py (autopay_subscribe, autopay_verify, autopay_cancel around lines 613-662) with the UPI Autopay mandate flow. POST /autopay/subscribe: create or reuse a Razorpay customer for the profile, then create an order with amount 100, currency INR, method upi, customer_id, and token {max_amount: autopay_max_amount_paise(step), expire_at: unix ts 10 years out, frequency: 'as_presented'}; persist autopay_customer_id, autopay_step_paise, autopay_status 'pending'; return order_id, key_id, amount, max_amount and the ladder preview. POST /autopay/verify: verify the payment signature, fetch the payment to read token_id, persist autopay_token_id and autopay_started_on = today, set status 'active'. POST /autopay/cancel: delete the token at Razorpay when a token id is present, set status 'cancelled'. Handle Razorpay errors the way the surrounding code does (HTTPException 502 with the provider message). Mock the razorpay client in tests; never call the network from a test.",
+      "acceptance_criteria": [
+        "POST /autopay/subscribe creates an order carrying token.max_amount equal to daily_plan * 30 * 100 paise and frequency as_presented",
+        "POST /autopay/verify with a bad signature returns 400 and leaves autopay_status at pending",
+        "POST /autopay/verify with a good signature stores token_id and started_on and sets status active",
+        "POST /autopay/cancel with no token id still sets status cancelled and does not raise",
+        "No test performs a real network call to Razorpay",
+        "Full suite stays green"
+      ],
+      "files": ["api/index.py", "api/tests/test_autopay_mandate.py"],
+      "depends_on": ["T3"]
+    },
+    "T5": {
+      "id": "T5",
+      "title": "Daily debit runner plus webhook credit on token_id",
+      "description": "Add POST /autopay/run-daily to api/index.py, protected by a shared secret header compared with os.environ['AUTOPAY_CRON_SECRET'] using hmac.compare_digest, returning 503 when unset and 401 on mismatch. For each profile with autopay_status 'active' and a token id: compute the amount via the T3 helper, insert the autopay_debits row first so the unique (profile_id, debit_date) constraint makes a re-run a no-op, create a Razorpay order for that amount, then create the recurring payment against the token, and record razorpay_order_id. On a provider error mark the row failed with the message and carry on to the next profile so one bad mandate cannot stall the batch. Queue tomorrow's pre-debit notification through the existing notify.py path. Then extend the webhook: replace the subscription_id branch in razorpay_webhook with a token_id branch that credits the active kudam and marks the matching autopay_debits row captured, keyed on the order id; add a payment.failed branch that marks it failed. Keep the credit idempotent on the Razorpay payment id exactly as _credit_autopay_deposit already is. Add a vercel.json crons entry running /api/autopay/run-daily daily.",
+      "acceptance_criteria": [
+        "Calling /autopay/run-daily twice for the same date debits once, proven by the second call reporting the profile as already processed",
+        "A missing or wrong cron secret returns 503 or 401 and performs no debit",
+        "A provider failure on one profile marks that debit row failed and still processes the next profile",
+        "payment.captured carrying a token_id credits the kudam once and marks the debit row captured; a replay of the same event credits nothing further",
+        "payment.failed carrying a token_id marks the debit row failed",
+        "vercel.json declares the daily cron for /api/autopay/run-daily",
+        "Full suite stays green"
+      ],
+      "files": ["api/index.py", "vercel.json", "api/tests/test_autopay_daily.py", "api/tests/test_webhook.py"],
+      "depends_on": ["T4"]
+    },
+    "T6": {
+      "id": "T6",
+      "title": "Frontend: escalating ladder UI and legacy migration",
+      "description": "Update frontend/src/pages/Dashboard.jsx and frontend/src/lib/api.js for the mandate flow. The autopay panel explains the ladder in the user's own numbers: with a Rs 5 step, 'Day 1 you pay Rs 5, day 2 Rs 10, up to Rs 150 on day 30, then it starts again' plus the 30-day total. Open UPI Autopay checkout with the order returned by /autopay/subscribe and post the result to /autopay/verify. Show today's amount and tomorrow's amount when active. For a profile still on the legacy autopay_subscription_id with no token id, show a re-registration prompt explaining the switch rather than silently breaking their autopay. Match the existing Omni-Design styling and the locale handling already in the page.",
+      "acceptance_criteria": [
+        "The ladder copy renders the correct day 1, day 2, day 30 and 30-day-total figures for each of the Rs 1, Rs 5 and Rs 10 steps",
+        "A legacy subscription profile with no token id sees the re-registration prompt",
+        "npm run build in frontend/ succeeds",
+        "Full suite stays green"
+      ],
+      "files": ["frontend/src/pages/Dashboard.jsx", "frontend/src/lib/api.js"],
+      "depends_on": ["T5"]
     }
-  }
+  },
+  "open_questions": [
+    "Recurring Payments is an on-demand Razorpay feature and must be enabled on the account by Razorpay Support before any of this works against real keys.",
+    "Live vs test Razorpay keys for MCP-driven webhook registration. Test assumed.",
+    "Existing flat-autopay subscribers cannot be converted to tokens by any API. The plan cancels and re-prompts; confirm that is acceptable."
+  ]
 }

@@ -105,6 +105,7 @@ export async function payWithRazorpay(orderPayload, user, endpoint = "/payments/
       currency: order.currency,
       order_id: order.order_id,
       name: "Meenamma",
+      image: window.location.origin + "/logo.png",
       description:
         orderPayload.purpose === "deposit"
           ? "Kudam Deposit"
@@ -135,11 +136,18 @@ export async function payWithRazorpay(orderPayload, user, endpoint = "/payments/
   });
 }
 
-export async function setupAutopay(user) {
-  await loadRazorpayScript();
+// The step controls daily accrual; cadence only controls when the accumulated balance is
+// settled. Automatic cadences use Razorpay Subscriptions, while manual cadence skips checkout.
+export async function setupAutopay(user, { stepAmount, cadence } = {}) {
+  const selection = {
+    step_amount: stepAmount ?? user?.step_amount ?? user?.daily_plan ?? 5,
+    cadence: cadence ?? user?.autopay_cadence ?? "weekly",
+  };
+  if (selection.cadence !== "manual") await loadRazorpayScript();
   let sub;
   try {
-    ({ data: sub } = await api.post("/autopay/subscribe"));
+    ({ data: sub } = await api.post("/autopay/subscribe", selection));
+    if (sub.manual) return sub;
     assertCheckoutPayload(sub, "subscription_id");
   } catch (error) {
     throw checkoutError(error, "Unable to create the Razorpay subscription.");
@@ -149,7 +157,8 @@ export async function setupAutopay(user) {
       key: sub.key_id,
       subscription_id: sub.subscription_id,
       name: "Meenamma",
-      description: `UPI Autopay · ₹${sub.amount}/day (billed ₹${sub.weekly_amount}/week)`,
+      image: window.location.origin + "/logo.png",
+      description: `Kudam savings · +₹${sub.step_amount}/day, settled ${sub.cadence}`,
       prefill: { name: user?.name || "", email: user?.email || "" },
       theme: { color: "#4A1C17" },
       handler: async (res) => {
@@ -172,4 +181,14 @@ export async function setupAutopay(user) {
     }
     rzp.open();
   });
+}
+
+export async function createAutopayPaymentLink() {
+  try {
+    const { data } = await api.post("/autopay/payment-link");
+    if (!data?.url) throw new Error("The payment link response is incomplete.");
+    return data;
+  } catch (error) {
+    throw checkoutError(error, "Unable to create a payment link for the accrued balance.");
+  }
 }

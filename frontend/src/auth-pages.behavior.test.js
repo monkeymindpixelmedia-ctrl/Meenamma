@@ -6,7 +6,10 @@ import ThirdPartyCallback from "./pages/ThirdPartyCallback";
 import VerifyEmail from "./pages/VerifyEmail";
 import { useAuth } from "./context/AuthContext";
 import { api } from "./lib/api";
-import { signInAndUp } from "supertokens-auth-react/recipe/thirdparty";
+import {
+  redirectToThirdPartyLogin,
+  signInAndUp,
+} from "supertokens-auth-react/recipe/thirdparty";
 import {
   getEmailVerificationTokenFromURL,
   sendVerificationEmail,
@@ -37,7 +40,7 @@ jest.mock("lucide-react", () => ({
 }));
 jest.mock("./context/AuthContext", () => ({ useAuth: jest.fn() }));
 jest.mock("./lib/api", () => ({
-  api: { post: jest.fn() },
+  api: { get: jest.fn(), post: jest.fn() },
   formatApiErrorDetail: jest.fn(() => ""),
   haptic: jest.fn(),
 }));
@@ -81,6 +84,7 @@ describe("frontend authentication pages", () => {
     getEmailVerificationTokenFromURL.mockReturnValue(null);
     sendVerificationEmail.mockResolvedValue({ status: "OK" });
     verifyEmail.mockResolvedValue({ status: "OK" });
+    api.get.mockResolvedValue({ data: { google_enabled: true } });
   });
 
   afterEach(async () => {
@@ -126,6 +130,34 @@ describe("frontend authentication pages", () => {
     });
 
     expect(mockNavigate).toHaveBeenCalledWith("/dashboard");
+  });
+
+  test("does not start Google redirect when backend reports Google disabled", async () => {
+    api.get.mockResolvedValue({ data: { google_enabled: false } });
+    useAuth.mockReturnValue({ login: jest.fn() });
+    await render(<Login />);
+    await flushEffects();
+
+    const googleButton = container.querySelector('[data-testid="google-login-btn"]');
+    if (googleButton) {
+      await act(async () => Simulate.click(googleButton));
+    }
+
+    expect(api.get).toHaveBeenCalledWith("/config/auth");
+    expect(redirectToThirdPartyLogin).not.toHaveBeenCalled();
+  });
+
+  test("starts Google redirect when backend reports Google enabled", async () => {
+    redirectToThirdPartyLogin.mockResolvedValue({ status: "OK" });
+    useAuth.mockReturnValue({ login: jest.fn() });
+    await render(<Login />);
+    await flushEffects();
+
+    const googleButton = container.querySelector('[data-testid="google-login-btn"]');
+    expect(googleButton).not.toBeNull();
+    await act(async () => Simulate.click(googleButton));
+
+    expect(redirectToThirdPartyLogin).toHaveBeenCalledWith({ thirdPartyId: "google" });
   });
 
   test("completes the Google callback only once", async () => {

@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Eye, EyeOff } from "lucide-react";
 import { redirectToThirdPartyLogin } from "supertokens-auth-react/recipe/thirdparty";
 import { useAuth } from "../context/AuthContext";
-import { formatApiErrorDetail, haptic } from "../lib/api";
+import { api, formatApiErrorDetail, haptic } from "../lib/api";
 
 function FiligreeLogo() {
   return (
@@ -25,6 +25,17 @@ export default function Login() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    const request = api.get?.("/config/auth");
+    if (!request) return undefined;
+    request
+      .then(({ data }) => active && setGoogleEnabled(data?.google_enabled === true))
+      .catch(() => active && setGoogleEnabled(false));
+    return () => { active = false; };
+  }, []);
 
   const doLogin = async (em, pw) => {
     setBusy(true);
@@ -40,6 +51,10 @@ export default function Login() {
   };
 
   const loginWithGoogle = async () => {
+    if (googleEnabled !== true) {
+      if (googleEnabled === false) setError("Google sign-in is not configured.");
+      return;
+    }
     haptic();
     setBusy(true);
     setError("");
@@ -108,11 +123,16 @@ export default function Login() {
           className="w-full flex items-center justify-center gap-3 border border-gold/60 bg-white py-3.5 text-obsidian text-xs uppercase hover:bg-gold/10 transition-colors duration-300"
           style={{ letterSpacing: "0.18em" }}
           onClick={loginWithGoogle}
-          disabled={busy}
+          disabled={busy || googleEnabled !== true}
           data-testid="google-login-btn"
         >
-          Continue with Google
+          {googleEnabled === false ? "Google sign-in unavailable" : "Continue with Google"}
         </button>
+        {googleEnabled === false && (
+          <p className="text-obsidian/60 text-xs mt-3 text-center" data-testid="google-unavailable">
+            Google sign-in is not configured.
+          </p>
+        )}
 
         <p className="text-obsidian/70 text-sm mt-8 text-center">
           New here?{" "}

@@ -15,6 +15,10 @@ EMAIL_FROM = os.environ.get("NOTIFICATIONS_FROM_EMAIL", "Meenamma <noreply@meena
 MAX_ATTEMPTS = 3
 
 SUBJECTS = {
+    "autopay_dunning": "Your Meenamma savings balance needs attention",
+    "autopay_payment_failed": "Your Meenamma savings payment did not go through",
+    "autopay_predebit": "Upcoming Meenamma savings debit",
+    "autopay_update_failed": "Action needed for your Meenamma savings debit",
     "catch_arrived": "Your reserved catch has landed",
     "booking_confirmed": "Your catch is confirmed",
     "booking_ready": "Your catch is ready",
@@ -24,6 +28,26 @@ SUBJECTS = {
 
 def _body(event_key: str, payload: dict, product: str) -> str:
     """Inner HTML for an outbox event (sibling ifs keep nesting flat)."""
+    if event_key == "autopay_predebit":
+        amount = payload.get("amount") or 0
+        debit_date = payload.get("debit_date") or "tomorrow"
+        return (
+            f"<p>Your next kudam savings debit is <strong>₹{amount}</strong> on {debit_date}.</p>"
+            "<p>Please keep sufficient balance in the account linked to your mandate.</p>"
+        )
+    if event_key == "autopay_dunning":
+        amount = payload.get("amount") or 0
+        return (
+            f"<p>Your unsettled kudam balance is <strong>₹{amount}</strong>.</p>"
+            "<p>It is above the authorised one-cycle ceiling, so we did not attempt a debit. "
+            "Please use the manual payment option in Meenamma.</p>"
+        )
+    if event_key in ("autopay_payment_failed", "autopay_update_failed"):
+        return (
+            "<p>We could not process your scheduled kudam savings debit.</p>"
+            "<p>Your savings ladder is still accruing and no accrual was marked as paid. "
+            "You can retry with the manual payment option.</p>"
+        )
     if event_key == "catch_arrived":
         return (
             f"<p>{payload.get('message') or f'{product} has landed'}.</p>"

@@ -1,15 +1,8 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { formatApiErrorDetail, haptic } from "../lib/api";
-
-const PLANS = [
-  { amount: 1, reward: "5% discount on feast day", tag: "Gentle" },
-  { amount: 5, reward: "20% Discount + Family Hamper", tag: "Most loved" },
-  { amount: 10, reward: "20% Discount + Premium Hamper", tag: "Generous" },
-];
+import { formatApiErrorDetail, haptic, setupAutopay } from "../lib/api";
 
 export default function Register() {
   const { register } = useAuth();
@@ -20,12 +13,12 @@ export default function Register() {
   const [password, setPassword] = useState("");
   const [pincode, setPincode] = useState("");
   const [plan, setPlan] = useState(5);
-  const [upi, setUpi] = useState("");
-  const [upiConnected, setUpiConnected] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [connecting, setConnecting] = useState(false);
+  const [customStepOpen, setCustomStepOpen] = useState(false);
+  const [customStepVal, setCustomStepVal] = useState("");
+  const [cadence, setCadence] = useState("daily");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
 
   const toStep2 = (e) => {
     e.preventDefault();
@@ -37,13 +30,27 @@ export default function Register() {
     }, 1200);
   };
 
-  const connectUpi = () => {
+  const handleCustomStepChange = (val) => {
+    const parsed = parseInt(val, 10);
+    setCustomStepVal(val);
+    if (!isNaN(parsed) && parsed > 0 && parsed <= 100) {
+      setPlan(parsed);
+    }
+  };
+
+  const selectPredefinedPlan = (amt) => {
     haptic();
-    setConnecting(true);
-    setTimeout(() => {
-      setConnecting(false);
-      setUpiConnected(true);
-    }, 1200);
+    setCustomStepOpen(false);
+    setPlan(amt);
+  };
+
+  const previewStep = plan;
+
+  const cadenceLabel = (c) => {
+    if (c === "daily") return "Daily";
+    if (c === "weekly") return "Weekly";
+    if (c === "monthly") return "Monthly";
+    return "Manual";
   };
 
   const submit = async () => {
@@ -51,15 +58,19 @@ export default function Register() {
     setBusy(true);
     setError("");
     try {
-      await register(name, email, password, plan, { pincode, upi_id: upi });
-      navigate("/auth/verify-email");
+      const loggedInUser = await register(name, email, password, plan, { pincode });
+      if (cadence !== "manual") {
+        await setupAutopay(loggedInUser, { stepAmount: plan, cadence });
+      }
+      navigate("/dashboard");
     } catch (err) {
       setError(formatApiErrorDetail(err.response?.data?.detail) || err.message || "Something went wrong. Please try again.");
-      setStep(1);
     } finally {
       setBusy(false);
     }
   };
+
+  const inr = (val) => val.toLocaleString("en-IN");
 
   return (
     <div className="min-h-screen bg-alabaster-paper paper-texture flex flex-col items-center justify-center px-6 py-12" data-testid="register-page">
@@ -93,26 +104,83 @@ export default function Register() {
 
           {step === 2 && (
             <motion.div key="s2" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.3 }}>
-              <h1 className="font-serif text-obsidian text-3xl font-medium text-center">Choose your rhythm</h1>
-              <p className="text-obsidian/70 text-sm mt-2 text-center">Step 2 · Daily savings plan</p>
-              <div className="space-y-4 mt-10">
-                {PLANS.map((p) => (
+              <h1 className="font-serif text-obsidian text-3xl font-medium text-center">Configure Savings</h1>
+              <p className="text-obsidian/70 text-sm mt-2 text-center">Step 2 · Step amount & cadence</p>
+              
+              <fieldset className="mt-8">
+                <legend className="text-obsidian/55 text-[9px] uppercase" style={{ letterSpacing: "0.2em" }}>Daily step</legend>
+                <div className="grid grid-cols-4 gap-2 mt-2">
+                  {[1, 5, 10].map((s) => (
+                    <button
+                      type="button"
+                      key={s}
+                      onClick={() => selectPredefinedPlan(s)}
+                      aria-pressed={plan === s && !customStepOpen}
+                      className={`py-2 text-xs border transition-colors ${plan === s && !customStepOpen
+                        ? "border-obsidian bg-obsidian text-gold-shimmer"
+                        : "border-gold/35 text-obsidian/70"}`}
+                      data-testid={`plan-option-${s}`}
+                    >
+                      +₹{s}
+                    </button>
+                  ))}
                   <button
-                    key={p.amount}
-                    onClick={() => { haptic(); setPlan(p.amount); }}
-                    data-testid={`plan-option-${p.amount}`}
-                    className={`w-full text-left p-5 border transition-all duration-300 ${
-                      plan === p.amount ? "border-gold bg-white shadow-[0_0_0_1px_#C5A059]" : "border-gold/30 bg-white/60"
-                    }`}
+                    type="button"
+                    onClick={() => { haptic(); setCustomStepOpen(true); }}
+                    aria-pressed={customStepOpen}
+                    className={`py-2 text-xs border transition-colors ${customStepOpen
+                      ? "border-obsidian bg-obsidian text-gold-shimmer"
+                      : "border-gold/35 text-obsidian/70"}`}
+                    data-testid="plan-option-custom"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="num-lg text-obsidian text-2xl"><span className="rupee">₹</span>{p.amount}<span className="text-sm text-obsidian/60 font-sans font-normal"> / day</span></span>
-                      <span className="text-gold-dim text-[9px] uppercase" style={{ letterSpacing: "0.25em" }}>{p.tag}</span>
-                    </div>
-                    <p className="text-obsidian/75 text-xs mt-2">₹{p.amount}/day = {p.reward}</p>
+                    Custom
                   </button>
+                </div>
+                {customStepOpen && (
+                  <div className="mt-3">
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      className="input-minimal text-center font-mono"
+                      placeholder="Enter amount (₹1 - ₹100)"
+                      value={customStepVal}
+                      onChange={(e) => handleCustomStepChange(e.target.value)}
+                      data-testid="custom-step-input"
+                    />
+                  </div>
+                )}
+              </fieldset>
+
+              <fieldset className="mt-6">
+                <legend className="text-obsidian/55 text-[9px] uppercase" style={{ letterSpacing: "0.2em" }}>Settle Cadence</legend>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  {["daily", "weekly", "monthly", "manual"].map((c) => (
+                    <button
+                      type="button"
+                      key={c}
+                      onClick={() => { haptic(); setCadence(c); }}
+                      aria-pressed={cadence === c}
+                      className={`py-2 text-xs border transition-colors ${cadence === c
+                        ? "border-gold bg-alabaster text-obsidian font-serif italic"
+                        : "border-gold/25 text-obsidian/60"}`}
+                      data-testid={`cadence-option-${c}`}
+                    >
+                      {cadenceLabel(c)}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+
+              <div className="grid grid-cols-2 gap-px bg-gold/20 border border-gold/20 mt-6">
+                {[["Day 1", previewStep], ["Day 2", previewStep * 2], ["Day 30", previewStep * 30], ["30-day total", previewStep * 465]].map(([label, value]) => (
+                  <div className="bg-white p-3" key={label}>
+                    <p className="text-obsidian/50 text-[9px] uppercase" style={{ letterSpacing: "0.12em" }}>{label}</p>
+                    <p className="num text-obsidian text-base mt-1">₹{inr(value)}</p>
+                  </div>
                 ))}
               </div>
+
               <button className="btn-obsidian w-full mt-8" onClick={() => { haptic(); setStep(3); }} data-testid="plan-continue-btn">Continue</button>
               <button className="w-full text-obsidian/60 text-xs mt-4 underline underline-offset-4" onClick={() => setStep(1)} data-testid="register-back-btn">Back</button>
             </motion.div>
@@ -120,27 +188,36 @@ export default function Register() {
 
           {step === 3 && (
             <motion.div key="s3" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.3 }}>
-              <h1 className="font-serif text-obsidian text-3xl font-medium text-center">Connect your UPI</h1>
-              <p className="text-obsidian/70 text-sm mt-2 text-center">Step 3 · One-tap daily payments</p>
-              <div className="card-white p-6 mt-10">
-                <input className="input-minimal" placeholder="yourname@upi" value={upi} onChange={(e) => { setUpi(e.target.value); setUpiConnected(false); }} data-testid="register-upi-input" />
-                {upiConnected ? (
-                  <div className="flex items-center gap-2 mt-5 text-obsidian" data-testid="upi-connected">
-                    <CheckCircle2 size={18} className="text-gold" />
-                    <span className="text-sm">UPI connected — payments will be one tap.</span>
-                  </div>
-                ) : (
-                  <button className="btn-gold-outline w-full mt-5" onClick={connectUpi} disabled={connecting || !upi} data-testid="connect-upi-btn">
-                    {connecting ? "Connecting…" : "Connect UPI"}
-                  </button>
-                )}
+              <h1 className="font-serif text-obsidian text-3xl font-medium text-center">
+                {cadence === "manual" ? "Ceremony Setup" : "Setup Autopay"}
+              </h1>
+              <p className="text-obsidian/70 text-sm mt-2 text-center">Step 3 · Confirm plan details</p>
+              
+              <div className="card-white p-6 mt-10 space-y-4">
+                <div>
+                  <p className="text-obsidian/55 text-[9px] uppercase" style={{ letterSpacing: "0.15em" }}>Daily step amount</p>
+                  <p className="num text-obsidian text-2xl mt-1">₹{plan}</p>
+                </div>
+                <div>
+                  <p className="text-obsidian/55 text-[9px] uppercase" style={{ letterSpacing: "0.15em" }}>Settlement cadence</p>
+                  <p className="text-obsidian text-lg font-serif mt-1">{cadenceLabel(cadence)}</p>
+                </div>
+                <div className="border-t border-gold/20 pt-4">
+                  <p className="text-obsidian/65 text-xs leading-5 font-serif italic">
+                    {cadence === "manual"
+                      ? "Your savings will accrue daily. You can settle the balance manually whenever you are ready."
+                      : `A secure Razorpay mandate will be configured to automatically sweep and settle the accrued balance on a ${cadence} basis.`}
+                  </p>
+                </div>
               </div>
+              
               {error && <p className="text-obsidian text-sm italic font-serif mt-4">{error}</p>}
+              
               <button className="btn-obsidian w-full mt-8" onClick={submit} disabled={busy} data-testid="register-submit-btn">
-                {busy ? "Consecrating…" : "Begin the Ceremony"}
+                {busy ? "Consecrating…" : cadence === "manual" ? "Begin the Ceremony" : "Continue to Mandate Setup"}
               </button>
+              
               <button className="w-full text-obsidian/60 text-xs mt-4 underline underline-offset-4" onClick={() => setStep(2)}>Back</button>
-              <p className="text-obsidian/60 text-[11px] text-center mt-3">You can also skip UPI and pay per deposit via Razorpay.</p>
             </motion.div>
           )}
         </AnimatePresence>

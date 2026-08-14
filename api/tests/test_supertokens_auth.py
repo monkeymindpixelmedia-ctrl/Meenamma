@@ -9,6 +9,16 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+AUTH_ENV = {
+    "SUPERTOKENS_CONNECTION_URI": "http://supertokens.invalid:3567",
+    "SUPERTOKENS_API_KEY": "unit-test-api-key",
+    "API_DOMAIN": "http://api.example.test",
+    "WEBSITE_DOMAIN": "http://web.example.test",
+    "GOOGLE_CLIENT_ID": "unit-test-google-client",
+    "GOOGLE_CLIENT_SECRET": "unit-test-google-secret",
+    "SUPABASE_URL": "https://database.example.test",
+    "SUPABASE_SERVICE_ROLE_KEY": "unit-test-service-role-key",
+}
 
 
 @pytest.fixture()
@@ -20,16 +30,7 @@ def configured_auth(monkeypatch):
     from supertokens_python.recipe.session.framework import fastapi as session_fastapi
 
     calls = {"recipes": {}, "verify_session": []}
-    fake_values = {
-        "SUPERTOKENS_CONNECTION_URI": "http://supertokens.invalid:3567",
-        "SUPERTOKENS_API_KEY": "unit-test-api-key",
-        "API_DOMAIN": "http://api.example.test",
-        "WEBSITE_DOMAIN": "http://web.example.test",
-        "GOOGLE_CLIENT_ID": "unit-test-google-client",
-        "GOOGLE_CLIENT_SECRET": "unit-test-google-secret",
-        "SUPABASE_URL": "https://database.example.test",
-        "SUPABASE_SERVICE_ROLE_KEY": "unit-test-service-role-key",
-    }
+    fake_values = dict(AUTH_ENV)
     for name, value in fake_values.items():
         monkeypatch.setenv(name, value)
 
@@ -96,6 +97,50 @@ def test_auth_configures_required_recipes_google_and_official_middleware(configu
     assert provider.third_party_id == "google"
     assert provider.clients[0].client_id == values["GOOGLE_CLIENT_ID"]
     assert provider.clients[0].client_secret == values["GOOGLE_CLIENT_SECRET"]
+
+
+def test_missing_google_credentials_omit_google_provider(configured_auth, monkeypatch):
+    _, calls, _, _ = configured_auth
+    monkeypatch.delenv("GOOGLE_CLIENT_ID")
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET")
+    calls["recipes"].clear()
+    sys.modules.pop("api.supertokens_config", None)
+
+    importlib.import_module("api.supertokens_config")
+
+    thirdparty_call = calls["recipes"].get("thirdparty")
+    providers = [] if thirdparty_call is None else (
+        thirdparty_call[1]["sign_in_and_up_feature"].providers)
+    google_providers = [provider for provider in providers
+                        if provider.config.third_party_id == "google"]
+    assert google_providers == []
+
+
+def test_auth_config_endpoint_reports_google_disabled_without_credentials(
+        configured_auth, monkeypatch):
+    monkeypatch.delenv("GOOGLE_CLIENT_ID")
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET")
+    sys.modules.pop("api.supertokens_config", None)
+    importlib.import_module("api.supertokens_config")
+    index = importlib.import_module("api.index")
+
+    route = next(route for route in index.api.routes if route.path == "/api/config/auth")
+    result = route.endpoint()
+    if inspect.isawaitable(result):
+        result = asyncio.run(result)
+
+    assert result == {"google_enabled": False}
+
+
+def test_auth_config_endpoint_reports_google_enabled_when_configured(configured_auth):
+    index = importlib.import_module("api.index")
+
+    route = next(route for route in index.api.routes if route.path == "/api/config/auth")
+    result = route.endpoint()
+    if inspect.isawaitable(result):
+        result = asyncio.run(result)
+
+    assert result == {"google_enabled": True}
 
 
 def test_bootstrap_session_bypasses_only_email_verification(configured_auth):

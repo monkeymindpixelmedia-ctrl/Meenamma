@@ -1,27 +1,75 @@
-import os, subprocess
+import subprocess
+from pathlib import Path
 
-with open('.env', 'r') as f:
-    lines = f.read().splitlines()
 
-env_vars = {}
-for line in lines:
-    if line.startswith('NEXT_PUBLIC_SUPABASE_URL='):
-        env_vars['SUPABASE_URL'] = line.split('=', 1)[1]
-        env_vars['REACT_APP_SUPABASE_URL'] = line.split('=', 1)[1]
-    elif line.startswith('NEXT_PUBLIC_SUPABASE_ANON_KEY='):
-        env_vars['REACT_APP_SUPABASE_ANON_KEY'] = line.split('=', 1)[1]
-    elif line.startswith('SUPABASE_SERVICE_ROLE_KEY='):
-        env_vars['SUPABASE_SERVICE_ROLE_KEY'] = line.split('=', 1)[1]
-    elif line.startswith('RAZORPAY_KEY_ID='):
-        env_vars['RAZORPAY_KEY_ID'] = line.split('=', 1)[1]
-    elif line.startswith('RAZORPAY_KEY_SECRET='):
-        env_vars['RAZORPAY_KEY_SECRET'] = line.split('=', 1)[1]
+ENV_FILES = (".env", ".env.local")
+VERCEL_TARGETS = ("production", "preview", "development")
+DEPLOYMENT_VARIABLES = {
+    "NEXT_PUBLIC_SUPABASE_URL": ("SUPABASE_URL", "REACT_APP_SUPABASE_URL"),
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": ("REACT_APP_SUPABASE_ANON_KEY",),
+    "SUPABASE_SERVICE_ROLE_KEY": ("SUPABASE_SERVICE_ROLE_KEY",),
+    "RAZORPAY_KEY_ID": ("RAZORPAY_KEY_ID",),
+    "RAZORPAY_KEY_SECRET": ("RAZORPAY_KEY_SECRET",),
+}
 
-# Also push to preview and development environments
-envs_to_push = ['production', 'preview', 'development']
 
-for env in envs_to_push:
-    for k, v in env_vars.items():
-        print(f"Adding {k} to {env}...")
-        p = subprocess.Popen(['npx.cmd', 'vercel', 'env', 'add', k, env], stdin=subprocess.PIPE, text=True)
-        p.communicate(input=v)
+def load_env_file(path):
+    values = {}
+    try:
+        lines = Path(path).read_text(encoding="utf-8-sig").splitlines()
+    except FileNotFoundError:
+        return values
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+
+        name, separator, value = line.partition("=")
+        name = name.strip()
+        if not separator or name not in DEPLOYMENT_VARIABLES:
+            continue
+
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        values[name] = value
+
+    return values
+
+
+def load_deployment_variables(directory="."):
+    local_values = {}
+    root = Path(directory)
+    for filename in ENV_FILES:
+        local_values.update(load_env_file(root / filename))
+
+    deployment_values = {}
+    for source_name, deployment_names in DEPLOYMENT_VARIABLES.items():
+        if source_name not in local_values:
+            continue
+        for deployment_name in deployment_names:
+            deployment_values[deployment_name] = local_values[source_name]
+    return deployment_values
+
+
+def sync_to_vercel(deployment_values):
+    for target in VERCEL_TARGETS:
+        for name, value in deployment_values.items():
+            print(f"Syncing {name} to {target}...")
+            subprocess.run(
+                ["npx.cmd", "vercel", "env", "add", name, target, "--force"],
+                input=value,
+                text=True,
+                check=True,
+            )
+
+
+def main():
+    sync_to_vercel(load_deployment_variables())
+
+
+if __name__ == "__main__":
+    main()

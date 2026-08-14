@@ -15,6 +15,8 @@ Configure these backend variables locally and in every Vercel environment that s
 - `API_URL` (the public API origin; use the website origin for this same-origin Vercel app)
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `ADMIN_EMAIL`
+- `ADMIN_PASSWORD`
 
 The Create React App build needs these variables at build time:
 
@@ -22,6 +24,8 @@ The Create React App build needs these variables at build time:
 - `REACT_APP_SUPERTOKENS_API_DOMAIN`
 - `REACT_APP_SUPERTOKENS_WEBSITE_DOMAIN`
 - `REACT_APP_API_URL`
+- `REACT_APP_SUPABASE_URL`
+- `REACT_APP_SUPABASE_ANON_KEY`
 
 Never expose `GOOGLE_CLIENT_SECRET`, `SUPERTOKENS_API_KEY`, or the Supabase service-role key through a
 `REACT_APP_*` variable. Those values are compiled into public browser JavaScript.

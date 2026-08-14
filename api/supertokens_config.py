@@ -13,8 +13,21 @@ from api.auth_email import verification_email_delivery
 
 
 API_BASE_PATH = "/api/auth"
-APP_URL = os.environ.get("APP_URL") or os.environ.get("NEXT_PUBLIC_APP_URL") or "http://localhost:3000"
-API_URL = os.environ.get("API_URL") or os.environ.get("NEXT_PUBLIC_BACKEND_URL") or "http://localhost:8000"
+
+app_url_env = os.environ.get("APP_URL") or os.environ.get("NEXT_PUBLIC_APP_URL")
+api_url_env = os.environ.get("API_URL") or os.environ.get("NEXT_PUBLIC_BACKEND_URL")
+vercel_url = os.environ.get("VERCEL_URL")
+
+if app_url_env and "localhost" not in app_url_env:
+    APP_URL = app_url_env
+else:
+    APP_URL = f"https://{vercel_url}" if vercel_url else "http://localhost:3000"
+
+if api_url_env and "localhost" not in api_url_env:
+    API_URL = api_url_env
+else:
+    API_URL = f"https://{vercel_url}" if vercel_url else "http://localhost:8000"
+
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
 GOOGLE_ENABLED = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
@@ -33,7 +46,7 @@ if GOOGLE_ENABLED:
     recipe_list.append(thirdparty.init(
         sign_in_and_up_feature=thirdparty.SignInAndUpFeature(providers=[google])))
 recipe_list.extend([
-    emailverification.init(mode="REQUIRED", email_delivery=verification_email_delivery()),
+    emailverification.init(mode="OPTIONAL", email_delivery=verification_email_delivery()),
     session.init(),
 ])
 

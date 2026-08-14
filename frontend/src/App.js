@@ -15,6 +15,7 @@ import Admin from "./pages/Admin";
 import Profile from "./pages/Profile";
 import Legal from "./pages/Legal";
 import Footer from "./components/Footer";
+import { motion, AnimatePresence } from "framer-motion";
 import "./App.css";
 
 function Protected({ children }) {
@@ -43,44 +44,55 @@ function Shell() {
   return (
     <div className="w-full min-h-screen bg-alabaster-paper flex flex-col">
       {showChrome && <Header />}
-      <div className="flex-grow">
-        <Routes>
-          <Route path="/" element={<Splash />} />
-        <Route path="/home" element={<Landing />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/auth/callback/google" element={<ThirdPartyCallback />} />
-        <Route path="/auth/verify-email" element={<VerifyEmail />} />
-        <Route
-          path="/dashboard"
-          element={
-            <Protected>
-              <Dashboard />
-            </Protected>
-          }
-        />
-        <Route path="/market" element={<Market />} />
-        <Route
-          path="/profile"
-          element={
-            <Protected>
-              <Profile />
-            </Protected>
-          }
-        />
-        <Route
-          path="/admin"
-          element={
-            <Protected>
-              <AdminOnly>
-                <Admin />
-              </AdminOnly>
-            </Protected>
-          }
-        />
-        <Route path="/legal/:policy" element={<Legal />} />
-          <Route path="*" element={<Navigate to="/home" replace />} />
-        </Routes>
+      <div className="flex-grow overflow-hidden relative">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={location.pathname}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full h-full"
+          >
+            <Routes location={location}>
+              <Route path="/" element={<Splash />} />
+              <Route path="/home" element={<Landing />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/auth/callback/google" element={<ThirdPartyCallback />} />
+              <Route path="/auth/verify-email" element={<VerifyEmail />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <Protected>
+                    <Dashboard />
+                  </Protected>
+                }
+              />
+              <Route path="/market" element={<Market />} />
+              <Route
+                path="/profile"
+                element={
+                  <Protected>
+                    <Profile />
+                  </Protected>
+                }
+              />
+              <Route
+                path="/admin"
+                element={
+                  <Protected>
+                    <AdminOnly>
+                      <Admin />
+                    </AdminOnly>
+                  </Protected>
+                }
+              />
+              <Route path="/legal/:policy" element={<Legal />} />
+              <Route path="*" element={<Navigate to="/home" replace />} />
+            </Routes>
+          </motion.div>
+        </AnimatePresence>
       </div>
       {showChrome && <BottomNav />}
       <Footer />
