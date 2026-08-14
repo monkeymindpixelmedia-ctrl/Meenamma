@@ -63,18 +63,25 @@ async def get_current_user(auth_session: SessionContainer = Depends(verified_ses
             .select("*, staff_role_assignments!profile_id(role, revoked_at)")
             .eq("id", user_id).execute().data)
     if not rows:
+        # Fallback: same email may exist under a different auth provider (e.g. Google OAuth).
+        # Use that profile rather than creating a duplicate that would violate the email unique constraint.
+        rows = (sb.table("profiles")
+                .select("*, staff_role_assignments!profile_id(role, revoked_at)")
+                .eq("email", email).execute().data)
+    if not rows:
         sb.table("profiles").insert({"id": user_id, "email": email}).execute()
         rows = (sb.table("profiles")
                 .select("*, staff_role_assignments!profile_id(role, revoked_at)")
                 .eq("id", user_id).execute().data)
     p = rows[0]
     if p.get("email") != email:
-        sb.table("profiles").update({"email": email}).eq("id", user_id).execute()
+        sb.table("profiles").update({"email": email}).eq("id", p["id"]).execute()
         p["email"] = email
     roles = [r["role"] for r in (p.get("staff_role_assignments") or []) if not r.get("revoked_at")]
     p["_role"] = "admin" if "ops_admin" in roles else "user"
     retire_legacy_autopay(p)
     return p
+
 
 
 def retire_legacy_autopay(p: dict) -> None:
