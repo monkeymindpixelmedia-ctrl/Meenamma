@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import os
+from types import SimpleNamespace
 import requests
 import pytest
 from dotenv import load_dotenv
@@ -153,3 +154,167 @@ def test_webhook_failed_marks_attempt(demo_headers):
     r = _post(body, _sig(body))
     assert r.status_code == 200, r.text
     assert r.json()["ok"] is True
+
+
+def test_webhook_subscription_charge_credits_kudam(monkeypatch):
+    """Autopay debits carry a subscription_id (no order_id); the webhook must
+    credit the customer's active kudam so collected money actually lands."""
+    import api.index as index
+
+    credits = []
+    kudams_db = {"k1": {"id": "k1", "profile_id": "u1", "saved_paise": 5000,
+                        "goal_paise": 100000, "status": "active", "created_at": "2026-08-01T00:00:00Z"}}
+    deposits_db = []
+    webhook_db = []
+
+    class Resp:
+        def __init__(self, data):
+            self.data = data
+
+    class Q:
+        def __init__(self, table):
+            self.table = table
+            self._filters, self._order, self._limit = {}, None, None
+            self._op = None
+
+        def select(self, cols):
+            return self
+
+        def eq(self, k, v):
+            self._filters[k] = v
+            return self
+
+        def order(self, col, desc=False):
+            self._order = (col, desc)
+            return self
+
+        def limit(self, n):
+            self._limit = n
+            return self
+
+        def insert(self, row):
+            self._op = ("insert", row)
+            return self
+
+        def update(self, upd):
+            self._op = ("update", upd)
+            return self
+
+        def execute(self):
+            if self._op:
+                op, arg = self._op
+                if op == "insert" and self.table == "kudam_deposits":
+                    deposits_db.append(arg)
+                    return Resp([{"id": "d1"}])
+                if op == "insert" and self.table == "payment_webhook_events":
+                    webhook_db.append(arg)
+                    return Resp([{"id": "w1"}])
+                if op == "update" and self.table == "kudams":
+                    kudams_db[self._filters.get("id", "k1")].update(arg)
+                    return Resp([kudams_db[self._filters.get("id", "k1")]])
+                return Resp([{}])
+            if self.table == "kudam_deposits":
+                pid = self._filters.get("provider_payment_id")
+                return Resp([d for d in deposits_db if d.get("provider_payment_id") == pid])
+            if self.table == "profiles":
+                sub = self._filters.get("autopay_subscription_id")
+                return Resp([{"id": "u1"}] if sub == "sub_daily1" else [])
+            if self.table == "kudams":
+                rows = [d for d in kudams_db.values()
+                        if d.get("status") == self._filters.get("status", d.get("status"))
+                        and d.get("profile_id") == self._filters.get("profile_id")]
+                if self._order:
+                    rows = sorted(rows, key=lambda r: r[self._order[0]], reverse=self._order[1])
+                return Resp(rows[:1] if self._limit else rows)
+            return Resp([])
+
+    class FakeSB:
+        def table(self, t):
+            return Q(t)
+
+    def fake_apply(kudam_id, amount_paise, source, payment_id=None):
+        credits.append((kudam_id, amount_paise, source, payment_id))
+        deposits_db.append({"kudam_id": kudam_id, "provider_payment_id": payment_id})
+        k = kudams_db[kudam_id]
+        k["saved_paise"] += amount_paise
+        return k
+
+    monkeypatch.setattr(index, "sb", FakeSB())
+    monkeypatch.setattr(index, "apply_kudam_deposit", fake_apply)
+    monkeypatch.setenv("RAZORPAY_WEBHOOK_SECRET", WEBHOOK_SECRET)
+    from fastapi.testclient import TestClient
+    c = TestClient(index.app)
+
+    pay_id = "pay_sub" + os.urandom(4).hex()
+    body, _ = _event(f"evt_{pay_id}", "payment.captured",
+                     {"id": pay_id, "subscription_id": "sub_daily1",
+                      "amount": 3500, "currency": "INR", "method": "upi"})
+    r = c.post("/api/payments/webhook", content=body,
+               headers={"X-Razorpay-Signature": _sig(body)})
+    assert r.status_code == 200, r.text
+    assert r.json()["autopay_credited"] is True
+    assert credits == [("k1", 3500, "autopay", pay_id)], credits
+    assert kudams_db["k1"]["saved_paise"] == 8500
+
+    # retry with the same payment id must not double-credit
+    r2 = c.post("/api/payments/webhook", content=body,
+                headers={"X-Razorpay-Signature": _sig(body)})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["autopay_credited"] is True
+    assert len(credits) == 1, credits
+
+
+def test_webhook_subscription_unknown_ignored(monkeypatch):
+    """A subscription id we don't track must not credit anything."""
+    import api.index as index
+
+    class Q:
+        def __init__(self, table):
+            self.table = table
+            self._filters = {}
+            self._op = None
+
+        def select(self, cols):
+            return self
+
+        def eq(self, k, v):
+            self._filters[k] = v
+            return self
+
+        def order(self, col, desc=False):
+            return self
+
+        def limit(self, n):
+            return self
+
+        def insert(self, row):
+            self._op = ("insert", row)
+            return self
+
+        def update(self, upd):
+            self._op = ("update", upd)
+            return self
+
+        def execute(self):
+            if self._op and self.table == "payment_webhook_events":
+                return SimpleNamespace(data=[{"id": "w1"}])
+            if self.table == "kudam_deposits":
+                return SimpleNamespace(data=[])
+            return SimpleNamespace(data=[])
+
+    class FakeSB:
+        def table(self, t):
+            return Q(t)
+
+    monkeypatch.setattr(index, "sb", FakeSB())
+    monkeypatch.setenv("RAZORPAY_WEBHOOK_SECRET", WEBHOOK_SECRET)
+    from fastapi.testclient import TestClient
+    c = TestClient(index.app)
+
+    pay_id = "pay_unk" + os.urandom(4).hex()
+    body, _ = _event(f"evt_{pay_id}", "payment.captured",
+                     {"id": pay_id, "subscription_id": "sub_ghost", "amount": 500})
+    r = c.post("/api/payments/webhook", content=body,
+               headers={"X-Razorpay-Signature": _sig(body)})
+    assert r.status_code == 200, r.text
+    assert r.json()["autopay_credited"] is False

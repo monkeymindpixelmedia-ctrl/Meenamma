@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Sparkles, Crown } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
+import { redirectToThirdPartyLogin } from "supertokens-auth-react/recipe/thirdparty";
 import { useAuth } from "../context/AuthContext";
 import { formatApiErrorDetail, haptic } from "../lib/api";
 
@@ -29,8 +30,8 @@ export default function Login() {
     setBusy(true);
     setError("");
     try {
-      await login(em, pw);
-      navigate("/dashboard");
+      const result = await login(em, pw);
+      navigate(result?.verificationRequired ? "/auth/verify-email" : "/dashboard");
     } catch (err) {
       setError(formatApiErrorDetail(err.response?.data?.detail) || err.message || "Something went wrong. Please try again.");
     } finally {
@@ -38,12 +39,17 @@ export default function Login() {
     }
   };
 
-  const fillDemo = (em, pw) => {
+  const loginWithGoogle = async () => {
     haptic();
-    setEmail(em);
-    setPassword(pw);
-    setShowPw(true);
+    setBusy(true);
     setError("");
+    try {
+      const response = await redirectToThirdPartyLogin({ thirdPartyId: "google" });
+      if (response.status !== "OK") throw new Error("Google sign-in is not available right now.");
+    } catch (err) {
+      setError(err.message || "Could not start Google sign-in.");
+      setBusy(false);
+    }
   };
 
   return (
@@ -97,25 +103,16 @@ export default function Login() {
 
         <div className="gold-rule my-8" />
 
-        <div className="space-y-3">
-          <button
-            className="w-full flex items-center justify-center gap-2 border border-gold/60 bg-white py-3.5 text-obsidian text-xs uppercase hover:bg-gold/10 transition-colors duration-300"
-            style={{ letterSpacing: "0.18em" }}
-            onClick={() => fillDemo("demo@meenamma.in", "meenamma2026")}
-            data-testid="demo-user-btn"
-          >
-            <Sparkles size={14} className="text-gold" /> Try the Meenamma Experience (Demo)
-          </button>
-          <button
-            className="w-full flex items-center justify-center gap-2 border border-gold/60 bg-white py-3.5 text-obsidian text-xs uppercase hover:bg-gold/10 transition-colors duration-300"
-            style={{ letterSpacing: "0.18em" }}
-            onClick={() => fillDemo("admin@meenamma.in", "TempleGold@2026")}
-            data-testid="demo-admin-btn"
-          >
-            <Crown size={14} className="text-gold" /> Enter as Store Admin (Demo)
-          </button>
-          <p className="text-obsidian/60 text-[11px] text-center">Taps pre-fill the credentials — then press Enter.</p>
-        </div>
+        <button
+          type="button"
+          className="w-full flex items-center justify-center gap-3 border border-gold/60 bg-white py-3.5 text-obsidian text-xs uppercase hover:bg-gold/10 transition-colors duration-300"
+          style={{ letterSpacing: "0.18em" }}
+          onClick={loginWithGoogle}
+          disabled={busy}
+          data-testid="google-login-btn"
+        >
+          Continue with Google
+        </button>
 
         <p className="text-obsidian/70 text-sm mt-8 text-center">
           New here?{" "}

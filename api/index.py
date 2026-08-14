@@ -6,16 +6,17 @@ import re
 import json
 import uuid
 import hashlib
-import jwt as pyjwt
 import razorpay
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from jwt import PyJWKClient
 from pydantic import BaseModel, Field
 from supabase import create_client
+from supertokens_python.recipe.session.interfaces import SessionContainer
+from api.supertokens_config import (bootstrap_session, session_identity,
+                                    supertokens_middleware, verified_session)
 from api.notify import drain_notification_outbox, queue_notification
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", os.environ.get("NEXT_PUBLIC_SUPABASE_URL"))
@@ -27,9 +28,6 @@ sb.postgrest.session = _httpx.Client(
     limits=_httpx.Limits(max_connections=20, max_keepalive_connections=10, keepalive_expiry=15),
     transport=_httpx.HTTPTransport(retries=2),
 )
-JWKS = PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json", cache_keys=True)
-ISSUER = f"{SUPABASE_URL}/auth/v1"
-
 rzp = razorpay.Client(auth=(os.environ.get("RAZORPAY_KEY_ID", ""), os.environ.get("RAZORPAY_KEY_SECRET", "")))
 
 app = FastAPI(title="Meenamma API")
@@ -44,33 +42,32 @@ def slugify(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-") or "item"
 
 
+def require_razorpay_config() -> str:
+    key_id = os.environ.get("RAZORPAY_KEY_ID", "").strip()
+    key_secret = os.environ.get("RAZORPAY_KEY_SECRET", "").strip()
+    if not key_id or not key_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Razorpay is not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.",
+        )
+    return key_id
+
+
 # ---------- Auth ----------
-def decode_token(token: str) -> dict:
-    header = pyjwt.get_unverified_header(token)
-    if header.get("alg") == "HS256":
-        res = sb.auth.get_user(token)
-        if not res or not res.user:
-            raise pyjwt.InvalidTokenError("invalid session")
-        return {"sub": res.user.id, "email": res.user.email}
-    key = JWKS.get_signing_key_from_jwt(token)
-    return pyjwt.decode(token, key.key, algorithms=["ES256", "RS256"],
-                        audience="authenticated", issuer=ISSUER)
-
-
-def get_current_user(request: Request) -> dict:
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    try:
-        claims = decode_token(auth[7:])
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
+async def get_current_user(auth_session: SessionContainer = Depends(verified_session)) -> dict:
+    user_id, email = await session_identity(auth_session)
     rows = (sb.table("profiles")
             .select("*, staff_role_assignments!profile_id(role, revoked_at)")
-            .eq("id", claims["sub"]).execute().data)
+            .eq("id", user_id).execute().data)
     if not rows:
-        raise HTTPException(status_code=401, detail="Profile not found")
+        sb.table("profiles").insert({"id": user_id, "email": email}).execute()
+        rows = (sb.table("profiles")
+                .select("*, staff_role_assignments!profile_id(role, revoked_at)")
+                .eq("id", user_id).execute().data)
     p = rows[0]
+    if p.get("email") != email:
+        sb.table("profiles").update({"email": email}).eq("id", user_id).execute()
+        p["email"] = email
     roles = [r["role"] for r in (p.get("staff_role_assignments") or []) if not r.get("revoked_at")]
     p["_role"] = "admin" if "ops_admin" in roles else "user"
     return p
@@ -102,8 +99,7 @@ class ProfileIn(BaseModel):
     locale: Optional[str] = None
 
 
-@api.patch("/me")
-def update_me(body: ProfileIn, user: dict = Depends(get_current_user)):
+def profile_updates(body: ProfileIn) -> dict:
     upd = {}
     if body.name:
         upd["display_name"] = body.name
@@ -117,6 +113,21 @@ def update_me(body: ProfileIn, user: dict = Depends(get_current_user)):
         if body.locale not in ("en", "ta"):
             raise HTTPException(status_code=400, detail="locale must be 'en' or 'ta'")
         upd["locale"] = body.locale
+    return upd
+
+
+@api.post("/profile/bootstrap")
+async def bootstrap_profile(body: ProfileIn,
+                            auth_session: SessionContainer = Depends(bootstrap_session)):
+    user_id, email = await session_identity(auth_session)
+    upd = {"id": user_id, "email": email, **profile_updates(body)}
+    sb.table("profiles").upsert(upd, on_conflict="id").execute()
+    return {"ok": True}
+
+
+@api.patch("/me")
+def update_me(body: ProfileIn, user: dict = Depends(get_current_user)):
+    upd = profile_updates(body)
     if upd:
         sb.table("profiles").update(upd).eq("id", user["id"]).execute()
         user = {**user, **upd}
@@ -303,6 +314,7 @@ class VerifyIn(BaseModel):
 
 @api.post("/payments/create-order")
 def create_order(body: OrderCreate, user: dict = Depends(get_current_user)):
+    key_id = require_razorpay_config()
     if body.purpose not in ("deposit", "booking"):
         raise HTTPException(status_code=400, detail="Invalid purpose")
     uid = user["id"]
@@ -380,7 +392,7 @@ def create_order(body: OrderCreate, user: dict = Depends(get_current_user)):
             "expires_at": (now_utc() + timedelta(hours=1)).isoformat()}).execute()
 
     return {"order_id": rzp_order["id"], "amount": amount * 100, "currency": "INR",
-            "key_id": os.environ["RAZORPAY_KEY_ID"], "discount_percent": discount_percent,
+            "key_id": key_id, "discount_percent": discount_percent,
             "credit_paise": credit_paise}
 
 
@@ -523,6 +535,34 @@ def _process_failed_payment(rzp_order_id: str, entity: dict):
     return att[0]
 
 
+def _credit_autopay_deposit(subscription_id: str, entity: dict) -> bool:
+    """Credit a subscription (UPI autopay) charge to the customer's active kudam.
+
+    Subscription debits reach the webhook as payment.captured with a
+    subscription_id and no order_id, so they never match a payment_attempts
+    row. Without this, Razorpay collects the money but the kudam is never
+    credited. Idempotent on the Razorpay payment id.
+    """
+    pay_id = entity.get("id") or ""
+    amount = entity.get("amount") or 0
+    if not subscription_id or not pay_id or amount <= 0:
+        return False
+    dup = (sb.table("kudam_deposits").select("id")
+           .eq("provider_payment_id", pay_id).limit(1).execute().data)
+    if dup:
+        return True  # already credited (webhook retries)
+    prof = (sb.table("profiles").select("id")
+            .eq("autopay_subscription_id", subscription_id).execute().data)
+    if not prof:
+        return False
+    kudams = (sb.table("kudams").select("id").eq("profile_id", prof[0]["id"])
+              .eq("status", "active").order("created_at", desc=True).limit(1).execute().data)
+    if not kudams:
+        return False
+    apply_kudam_deposit(kudams[0]["id"], amount, "autopay", pay_id)
+    return True
+
+
 @api.post("/payments/webhook")
 async def razorpay_webhook(request: Request):
     secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET")
@@ -564,17 +604,22 @@ async def razorpay_webhook(request: Request):
     entity = (payload.get("payload") or {}).get("payment") or {}
     entity = entity.get("entity") or {}
     rzp_order_id = entity.get("order_id") or ""
+    sub_id = entity.get("subscription_id") or ""
     attempt = None
+    credited_autopay = False
     if event_type == "payment.captured" and rzp_order_id:
         attempt = _process_captured_payment(rzp_order_id, entity)
     elif event_type == "payment.failed" and rzp_order_id:
         attempt = _process_failed_payment(rzp_order_id, entity)
+    elif event_type == "payment.captured" and sub_id:
+        credited_autopay = _credit_autopay_deposit(sub_id, entity)
     upd = {"processed_at": now_utc().isoformat()}
     if attempt:
         upd["payment_attempt_id"] = attempt["id"]
     sb.table("payment_webhook_events").update(upd) \
         .eq("payload_hash", payload_hash).eq("provider", "razorpay").execute()
-    return {"ok": True, "processed": event_type in ("payment.captured", "payment.failed")}
+    return {"ok": True, "processed": event_type in ("payment.captured", "payment.failed"),
+            "autopay_credited": credited_autopay}
 
 
 # ---------- UPI Autopay (Razorpay subscriptions) ----------
@@ -586,6 +631,7 @@ class AutopayVerifyIn(BaseModel):
 
 @api.post("/autopay/subscribe")
 def autopay_subscribe(user: dict = Depends(get_current_user)):
+    key_id = require_razorpay_config()
     amt = user.get("daily_plan") or 5
     weekly = amt * 7
     try:
@@ -597,12 +643,13 @@ def autopay_subscribe(user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=502, detail=f"Razorpay autopay setup failed: {e}")
     sb.table("profiles").update({"autopay_subscription_id": sub["id"], "autopay_status": "pending"}) \
         .eq("id", user["id"]).execute()
-    return {"subscription_id": sub["id"], "key_id": os.environ["RAZORPAY_KEY_ID"], "amount": amt,
+    return {"subscription_id": sub["id"], "key_id": key_id, "amount": amt,
             "weekly_amount": weekly}
 
 
 @api.post("/autopay/verify")
 def autopay_verify(body: AutopayVerifyIn, user: dict = Depends(get_current_user)):
+    require_razorpay_config()
     try:
         rzp.utility.verify_subscription_payment_signature({
             "razorpay_subscription_id": body.razorpay_subscription_id,
@@ -663,6 +710,7 @@ def list_reservations(user: dict = Depends(get_current_user)):
 
 @api.post("/reservations/create-order")
 def reservation_create_order(body: ReservationIn, user: dict = Depends(get_current_user)):
+    key_id = require_razorpay_config()
     prows = sb.table("products").select("*").eq("id", body.product_id).neq("status", "archived").execute().data
     if not prows:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -680,12 +728,13 @@ def reservation_create_order(body: ReservationIn, user: dict = Depends(get_curre
         "total_paise": total_paise, "advance_paise": advance_paise,
         "advance_razorpay_order_id": rzp_order["id"]}).execute()
     return {"order_id": rzp_order["id"], "amount": advance_paise, "currency": "INR",
-            "key_id": os.environ["RAZORPAY_KEY_ID"], "discount_percent": 0}
+            "key_id": key_id, "discount_percent": 0}
 
 
 @api.post("/reservations/{reservation_id}/complete-order")
 def reservation_complete_order(reservation_id: str, body: ReservationCompleteIn,
                                user: dict = Depends(get_current_user)):
+    key_id = require_razorpay_config()
     rows = sb.table("reservations").select("*").eq("id", reservation_id) \
         .eq("profile_id", user["id"]).execute().data
     if not rows:
@@ -701,7 +750,7 @@ def reservation_complete_order(reservation_id: str, body: ReservationCompleteIn,
     sb.table("reservations").update({"balance_razorpay_order_id": rzp_order["id"],
                                      "delivery_date": body.pickup_date}).eq("id", r["id"]).execute()
     return {"order_id": rzp_order["id"], "amount": balance, "currency": "INR",
-            "key_id": os.environ["RAZORPAY_KEY_ID"], "discount_percent": 0}
+            "key_id": key_id, "discount_percent": 0}
 
 
 def queue_order_notification(order: dict, event_key: str, user: Optional[dict] = None):
@@ -959,10 +1008,12 @@ def health():
 
 app.include_router(api)
 app.mount("/api/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+app.add_middleware(supertokens_middleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["front-token"],
 )

@@ -8,9 +8,24 @@ import uuid
 from supabase import create_client
 
 from supertokens_python import init, InputAppInfo, SupertokensConfig
-from supertokens_python.recipe import emailpassword, session
-from supertokens_python.recipe.emailpassword.syncio import sign_up
-from supertokens_python.recipe.emailpassword.interfaces import SignUpOkResult
+from supertokens_python.interfaces import (CreateUserIdMappingOkResult,
+                                           GetUserIdMappingOkResult,
+                                           UserIdMappingAlreadyExistsError)
+from supertokens_python.recipe import emailpassword, emailverification, session
+from supertokens_python.recipe.emailpassword.interfaces import (EmailAlreadyExistsError,
+                                                                 SignUpOkResult,
+                                                                 UpdateEmailOrPasswordOkResult)
+from supertokens_python.recipe.emailpassword.syncio import sign_up, update_email_or_password
+from supertokens_python.recipe.emailverification.interfaces import (
+    CreateEmailVerificationTokenEmailAlreadyVerifiedError,
+    CreateEmailVerificationTokenOkResult, VerifyEmailUsingTokenInvalidTokenError,
+    VerifyEmailUsingTokenOkResult)
+from supertokens_python.recipe.emailverification.syncio import (
+    create_email_verification_token, is_email_verified, verify_email_using_token)
+from supertokens_python.syncio import (create_user_id_mapping, get_user_id_mapping,
+                                       list_users_by_account_info)
+from supertokens_python.types import RecipeUserId
+from supertokens_python.types.base import AccountInfoInput
 
 sb = create_client(os.environ.get("SUPABASE_URL", os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "")), os.environ["SUPABASE_SERVICE_ROLE_KEY"])
 
@@ -19,7 +34,7 @@ init(
         app_name="Meenamma",
         api_domain=os.environ.get("NEXT_PUBLIC_BACKEND_URL", "http://localhost:8000"),
         website_domain=os.environ.get("NEXT_PUBLIC_APP_URL", "http://localhost:3000"),
-        api_base_path="/auth",
+        api_base_path="/api/auth",
         website_base_path="/auth"
     ),
     supertokens_config=SupertokensConfig(
@@ -28,8 +43,9 @@ init(
     ),
     framework='fastapi',
     recipe_list=[
-        session.init(),
-        emailpassword.init()
+        emailpassword.init(),
+        emailverification.init(mode="REQUIRED"),
+        session.init()
     ]
 )
 
@@ -103,18 +119,76 @@ def slugify(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
 
 
-def ensure_user(email, password, name):
-    rows = sb.table("profiles").select("id").eq("email", email).execute().data
-    if rows:
-        return rows[0]["id"]
-
-    res = sign_up("public", email, password)
-    if isinstance(res, SignUpOkResult):
-        uid = res.user.recipe_user_id.get_as_string()
-        sb.table("profiles").insert({"id": uid, "email": email, "display_name": name}).execute()
-        return uid
+def _emailpassword_identity(email, password):
+    result = sign_up("public", email, password)
+    if isinstance(result, SignUpOkResult):
+        user, recipe_user_id = result.user, result.recipe_user_id
+    elif isinstance(result, EmailAlreadyExistsError):
+        matches = [
+            (user, method.recipe_user_id)
+            for user in list_users_by_account_info("public", AccountInfoInput(email=email))
+            for method in user.login_methods
+            if method.recipe_id == "emailpassword" and method.has_same_email_as(email)
+        ]
+        if len(matches) != 1:
+            raise RuntimeError(f"Expected one email/password identity for {email}; found {len(matches)}")
+        user, recipe_user_id = matches[0]
+        recipe_user_id = RecipeUserId(recipe_user_id)
     else:
-        raise Exception(f"Failed to create user {email}: {res}")
+        raise RuntimeError(f"Failed to create email/password identity for {email}: {result!r}")
+
+    updated = update_email_or_password(recipe_user_id, password=password)
+    if not isinstance(updated, UpdateEmailOrPasswordOkResult):
+        raise RuntimeError(f"Failed to set the seed password for {email}: {updated!r}")
+    return user.id, recipe_user_id
+
+
+def _verify_seed_email(email, recipe_user_id):
+    if is_email_verified(recipe_user_id, email=email):
+        return
+    token = create_email_verification_token("public", recipe_user_id, email=email)
+    if isinstance(token, CreateEmailVerificationTokenEmailAlreadyVerifiedError):
+        return
+    if not isinstance(token, CreateEmailVerificationTokenOkResult):
+        raise RuntimeError(f"Failed to create an email verification token for {email}: {token!r}")
+    result = verify_email_using_token("public", token.token)
+    if isinstance(result, VerifyEmailUsingTokenOkResult):
+        return
+    if isinstance(result, VerifyEmailUsingTokenInvalidTokenError) and is_email_verified(
+            recipe_user_id, email=email):
+        return
+    raise RuntimeError(f"Failed to verify seeded email {email}: {result!r}")
+
+
+def _map_profile_id(supertokens_id, profile_id):
+    if supertokens_id == profile_id:
+        return profile_id
+    result = create_user_id_mapping(supertokens_id, profile_id)
+    if isinstance(result, CreateUserIdMappingOkResult):
+        return profile_id
+    if isinstance(result, UserIdMappingAlreadyExistsError):
+        current = get_user_id_mapping(supertokens_id, "SUPERTOKENS")
+        if (isinstance(current, GetUserIdMappingOkResult)
+                and current.external_user_id == profile_id):
+            return profile_id
+        raise RuntimeError(
+            f"Refusing to overwrite the existing user ID mapping for {supertokens_id}")
+    raise RuntimeError(f"Failed to map SuperTokens user {supertokens_id}: {result!r}")
+
+
+def ensure_user(email, password, name):
+    profiles = sb.table("profiles").select("id").eq("email", email).execute().data
+    if len(profiles) > 1:
+        raise RuntimeError(f"Expected at most one profile for {email}; found {len(profiles)}")
+
+    supertokens_id, recipe_user_id = _emailpassword_identity(email, password)
+    _verify_seed_email(email, recipe_user_id)
+    if profiles:
+        return _map_profile_id(supertokens_id, profiles[0]["id"])
+
+    sb.table("profiles").insert(
+        {"id": supertokens_id, "email": email, "display_name": name}).execute()
+    return supertokens_id
 
 
 def main():

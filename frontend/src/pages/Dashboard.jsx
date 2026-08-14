@@ -363,15 +363,15 @@ export default function Dashboard() {
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gold opacity-70" />
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-gold" />
                     </span>
-                    <p className="text-obsidian text-sm" data-testid="autopay-active-label">Active — ₹{plan} flows in daily at dawn.</p>
+                    <p className="text-obsidian text-sm" data-testid="autopay-active-label">Active — ₹{plan} × 7 is debited weekly and lands in your kudam.</p>
                   </div>
                 ) : (
                   <>
                     <p className="text-obsidian/75 text-xs leading-5">
-                      Set a one-time UPI mandate and ₹{plan} pours into your kudam every day — no taps needed.
+                      Set a one-time UPI mandate and ₹{plan} × 7 pours into your kudam every week — no taps needed. (UPI autopay debits weekly at minimum.)
                     </p>
                     <button className="btn-gold-outline w-full mt-4 !py-2.5" onClick={enableAutopay} disabled={busy} data-testid="enable-autopay-btn">
-                      Enable Autopay ₹{plan}/day
+                      Enable Autopay ₹{plan}/day (billed weekly)
                     </button>
                   </>
                 )}

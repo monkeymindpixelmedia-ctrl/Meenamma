@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2 } from "lucide-react";
-import { SavingsMandala } from "../components/SavingsMandala";
 import { useAuth } from "../context/AuthContext";
 import { formatApiErrorDetail, haptic } from "../lib/api";
 
@@ -25,7 +24,6 @@ export default function Register() {
   const [upiConnected, setUpiConnected] = useState(false);
   const [checking, setChecking] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [welcome, setWelcome] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -54,8 +52,7 @@ export default function Register() {
     setError("");
     try {
       await register(name, email, password, plan, { pincode, upi_id: upi });
-      setWelcome(true);
-      setTimeout(() => navigate("/dashboard"), 2400);
+      navigate("/auth/verify-email");
     } catch (err) {
       setError(formatApiErrorDetail(err.response?.data?.detail) || err.message || "Something went wrong. Please try again.");
       setStep(1);
@@ -63,18 +60,6 @@ export default function Register() {
       setBusy(false);
     }
   };
-
-  if (welcome) {
-    return (
-      <div className="min-h-screen bg-alabaster-paper paper-texture flex flex-col items-center justify-center px-6 text-center" data-testid="welcome-screen">
-        <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}>
-          <SavingsMandala progress={0} size={200} />
-          <h1 className="font-serif text-obsidian text-3xl md:text-4xl font-medium mt-8">Welcome to the<br />Meenamma Family</h1>
-          <p className="text-obsidian/70 text-sm mt-3">Your kudam is consecrated. The daily rhythm begins now.</p>
-        </motion.div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-alabaster-paper paper-texture flex flex-col items-center justify-center px-6 py-12" data-testid="register-page">

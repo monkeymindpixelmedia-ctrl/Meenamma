@@ -1,62 +1,79 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import EmailPassword from "supertokens-auth-react/recipe/emailpassword";
+import EmailVerification from "supertokens-auth-react/recipe/emailverification";
+import Session from "supertokens-auth-react/recipe/session";
 import { api } from "../lib/api";
-import { supabase } from "../lib/supabase";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null); // null=checking, false=guest, object=user
 
-  const fetchMe = async () => {
+  const refreshUser = async () => {
+    if (!(await Session.doesSessionExist())) {
+      setUser(false);
+      return false;
+    }
+    const verification = await EmailVerification.isEmailVerified();
+    if (!verification.isVerified) {
+      setUser(false);
+      return false;
+    }
     const { data } = await api.get("/auth/me");
     setUser(data);
     return data;
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) fetchMe().catch(() => setUser(false));
-      else setUser(false);
-    });
-    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") setUser(false);
-    });
-    return () => listener.subscription.unsubscribe();
+    refreshUser().catch(() => setUser(false));
   }, []);
 
   const login = async (email, password) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw new Error(error.message === "Invalid login credentials" ? "Invalid email or password" : error.message);
-    return fetchMe();
+    const response = await EmailPassword.signIn({
+      formFields: [
+        { id: "email", value: email },
+        { id: "password", value: password },
+      ],
+    });
+    if (response.status === "FIELD_ERROR") throw new Error(response.formFields.map((field) => field.error).join(" "));
+    if (response.status === "WRONG_CREDENTIALS_ERROR") throw new Error("Invalid email or password");
+    if (response.status === "SIGN_IN_NOT_ALLOWED") throw new Error(response.reason);
+    const verification = await EmailVerification.isEmailVerified();
+    if (!verification.isVerified) {
+      setUser(false);
+      return { verificationRequired: true };
+    }
+    return refreshUser();
   };
 
   const register = async (name, email, password, daily_plan = 5, extra = {}) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { name } },
+    const response = await EmailPassword.signUp({
+      formFields: [
+        { id: "email", value: email },
+        { id: "password", value: password },
+      ],
     });
-    if (error) throw new Error(error.message);
-    if (!data.session) throw new Error("Please check your email to confirm your account.");
-    const { data: profile } = await api.patch("/me", {
+    if (response.status === "FIELD_ERROR") throw new Error(response.formFields.map((field) => field.error).join(" "));
+    if (response.status === "SIGN_UP_NOT_ALLOWED") throw new Error(response.reason);
+    await api.post("/profile/bootstrap", {
       name,
       daily_plan,
       pincode: extra.pincode || "",
       upi_id: extra.upi_id || "",
     });
-    setUser(profile);
-    return profile;
+    setUser(false);
+    return { verificationRequired: true };
   };
 
   const updateUser = (data) => setUser(data);
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    await Session.signOut();
     setUser(false);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, login, register, logout, updateUser, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

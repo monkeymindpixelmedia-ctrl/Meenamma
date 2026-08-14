@@ -4,5 +4,6 @@ PyJWT[crypto]==2.13.0
 razorpay==2.0.1
 pydantic==2.13.4
 supabase==2.31.0
+supertokens-python==0.31.3
 uvicorn==0.25.0
 python-multipart==0.0.32
