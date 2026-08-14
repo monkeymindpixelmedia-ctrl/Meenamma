@@ -4,12 +4,13 @@ from fastapi import HTTPException
 from supertokens_python import InputAppInfo, SupertokensConfig, init
 from supertokens_python.asyncio import get_user
 from supertokens_python.framework.fastapi import get_middleware
-from supertokens_python.recipe import emailpassword, emailverification, session, thirdparty
+from supertokens_python.recipe import (dashboard, emailpassword, emailverification, session,
+                                       thirdparty)
 from supertokens_python.recipe.emailverification import EmailVerificationClaim
 from supertokens_python.recipe.session.framework.fastapi import verify_session
 from supertokens_python.recipe.session.interfaces import SessionContainer
 
-from api.auth_email import verification_email_delivery
+from api.auth_email import password_reset_email_delivery, verification_email_delivery
 
 
 API_BASE_PATH = "/api/auth"
@@ -21,7 +22,7 @@ vercel_url = os.environ.get("VERCEL_URL")
 if app_url_env and "localhost" not in app_url_env:
     APP_URL = app_url_env
 else:
-    APP_URL = f"https://{vercel_url}" if vercel_url else "http://localhost:3000"
+    APP_URL = f"https://{vercel_url}" if vercel_url else "https://meenamma.org"
 
 if api_url_env and "localhost" not in api_url_env:
     API_URL = api_url_env
@@ -32,7 +33,7 @@ GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
 GOOGLE_ENABLED = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
 
-recipe_list = [emailpassword.init()]
+recipe_list = [emailpassword.init(email_delivery=password_reset_email_delivery())]
 if GOOGLE_ENABLED:
     google = thirdparty.ProviderInput(
         config=thirdparty.ProviderConfig(
@@ -48,6 +49,7 @@ if GOOGLE_ENABLED:
 recipe_list.extend([
     emailverification.init(mode="OPTIONAL", email_delivery=verification_email_delivery()),
     session.init(),
+    dashboard.init(),
 ])
 
 init(
