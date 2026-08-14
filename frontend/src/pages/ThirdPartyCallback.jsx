@@ -24,10 +24,14 @@ export default function ThirdPartyCallback() {
         if (response.status !== "OK") throw new Error("Google sign-in could not be completed.");
 
         if (response.createdNewRecipeUser) {
-          await api.post("/profile/bootstrap", { name: "Meenamma Member" });
+          const { data } = await api.post("/profile/bootstrap", { name: "Meenamma Member" });
+          const appUser = await refreshUser();
+          // Genuinely new profile → onboarding; existing profile found by email → dashboard
+          navigate(data?.is_new ? "/register" : (appUser ? "/dashboard" : "/auth/verify-email"), { replace: true });
+        } else {
+          const appUser = await refreshUser();
+          navigate(appUser ? "/dashboard" : "/auth/verify-email", { replace: true });
         }
-        const appUser = await refreshUser();
-        navigate(appUser ? "/dashboard" : "/auth/verify-email", { replace: true });
       } catch (err) {
         setError(err.message || "Google sign-in could not be completed.");
       }

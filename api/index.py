@@ -162,6 +162,7 @@ async def bootstrap_profile(body: ProfileIn,
                             auth_session: SessionContainer = Depends(bootstrap_session)):
     user_id, email = await session_identity(auth_session)
     upd = {**profile_updates(body), "email": email}
+    is_new = False
 
     # Check if a profile already exists for this user_id
     existing = sb.table("profiles").select("id").eq("id", user_id).execute().data
@@ -177,6 +178,7 @@ async def bootstrap_profile(body: ProfileIn,
         else:
             sb.table("profiles").insert({"id": user_id, **upd}).execute()
             profile_id = user_id
+            is_new = True
 
     # Idempotent first Kudam creation
     existing_kudam = sb.table("kudams").select("id").eq("profile_id", profile_id).execute().data
@@ -187,7 +189,7 @@ async def bootstrap_profile(body: ProfileIn,
             "goal_paise": 1000 * 100
         }).execute()
 
-    return {"ok": True}
+    return {"ok": True, "is_new": is_new}
 
 
 @api.patch("/me")
