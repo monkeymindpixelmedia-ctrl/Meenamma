@@ -2,7 +2,7 @@ import axios from "axios";
 import { supabase } from "./supabase";
 
 export const api = axios.create({
-  baseURL: "/api",
+  baseURL: process.env.REACT_APP_API_URL || "/api",
 });
 
 api.interceptors.request.use(async (config) => {
@@ -16,7 +16,7 @@ api.interceptors.request.use(async (config) => {
 export const imgUrl = (path) => {
   if (!path) return "";
   if (path.startsWith("http")) return path;
-  return `/api/uploads/${path}`;
+  return `${process.env.REACT_APP_API_URL || "/api"}/uploads/${path}`;
 };
 
 export const haptic = () => {
