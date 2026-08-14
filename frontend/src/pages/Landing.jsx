@@ -185,6 +185,15 @@ export default function Landing() {
           <motion.p
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.05 }}
+            className="text-alabaster/90 text-sm font-semibold uppercase tracking-[0.3em] mb-2"
+            data-testid="app-name-label"
+          >
+            Meenamma.org
+          </motion.p>
+          <motion.p
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.1 }}
             className="text-gold text-[10px] md:text-xs uppercase mb-6 tracking-[0.45em]"
           >
