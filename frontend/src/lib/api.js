@@ -136,42 +136,41 @@ export async function payWithRazorpay(orderPayload, user, endpoint = "/payments/
   });
 }
 
-// Sets up daily recurring savings via Razorpay token-based recurring payments.
-// First charge authenticates the customer and creates a recurring token.
-// The backend cron then charges the token every 24h from activation.
-export async function setupAutopay(user, { stepAmount } = {}) {
-  const step_amount = stepAmount ?? user?.step_amount ?? user?.daily_plan ?? 5;
-  await loadRazorpayScript();
-  let setup;
+// The step controls daily accrual; cadence only controls when the accumulated balance is
+// settled. Automatic cadences use Razorpay Subscriptions, while manual cadence skips checkout.
+export async function setupAutopay(user, { stepAmount, cadence } = {}) {
+  const selection = {
+    step_amount: stepAmount ?? user?.step_amount ?? user?.daily_plan ?? 5,
+    cadence: cadence ?? user?.autopay_cadence ?? "weekly",
+  };
+  if (selection.cadence !== "manual") await loadRazorpayScript();
+  let sub;
   try {
-    ({ data: setup } = await api.post("/autopay/setup", { step_amount }));
+    ({ data: sub } = await api.post("/autopay/subscribe", selection));
+    if (sub.manual) return sub;
+    assertCheckoutPayload(sub, "subscription_id");
   } catch (error) {
-    throw checkoutError(error, "Unable to initiate autopay setup.");
+    throw checkoutError(error, "Unable to create the Razorpay subscription.");
   }
   return new Promise((resolve, reject) => {
     const rzp = new window.Razorpay({
-      key: setup.key_id,
-      amount: setup.first_charge * 100,
-      currency: "INR",
-      order_id: setup.order_id,
-      customer_id: setup.customer_id,
-      recurring: 1,
+      key: sub.key_id,
+      subscription_id: sub.subscription_id,
       name: "Meenamma",
       image: window.location.origin + "/logo.png",
-      description: `Daily kudam savings · ₹${setup.step_amount}/day`,
+      description: `Kudam savings · +₹${sub.step_amount}/day, settled ${sub.cadence}`,
       prefill: { name: user?.name || "", email: user?.email || "" },
       theme: { color: "#4A1C17" },
       handler: async (res) => {
         try {
-          const { data } = await api.post("/autopay/activate", {
+          const { data } = await api.post("/autopay/verify", {
             razorpay_payment_id: res.razorpay_payment_id,
-            razorpay_order_id: res.razorpay_order_id,
+            razorpay_subscription_id: res.razorpay_subscription_id,
             razorpay_signature: res.razorpay_signature,
-            razorpay_customer_id: setup.customer_id,
           });
           resolve(data);
         } catch (e) {
-          reject(checkoutError(e, "Autopay activation failed."));
+          reject(checkoutError(e, "Autopay verification failed."));
         }
       },
       modal: { ondismiss: () => reject(new Error("Autopay setup cancelled")) },

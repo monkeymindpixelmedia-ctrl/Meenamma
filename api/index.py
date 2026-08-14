@@ -685,12 +685,8 @@ def _dispatch_razorpay_event(event_type: str, event_payload: dict):
     elif event_type == "payment.captured" and order_id:
         attempt = _process_captured_payment(order_id, entity)
         profile_id = (entity.get("notes") or {}).get("profile_id")
-        kind = (entity.get("notes") or {}).get("kind") or ""
         if not attempt and profile_id:
             credited = _settle_autopay_payment(profile_id, entity)
-            if credited and kind == "autopay_accruals":
-                # Token-based charge confirmed — advance the per-user clock
-                _advance_next_charge(profile_id)
     elif event_type == "payment.failed" and order_id:
         attempt = _process_failed_payment(order_id, entity)
     elif event_type == "payment_link.paid":
@@ -750,34 +746,58 @@ async def razorpay_webhook(request: Request):
             "autopay_credited": credited_autopay}
 
 
-# ---------- Autopay: token-based recurring (Razorpay Recurring Payments) ----------
-# Each user gets a Razorpay customer + recurring token on first charge.
-# An hourly cron triggers charges for users whose 24h window has elapsed,
-# giving each user a personal rhythm from their enrollment time.
-class AutopaySetupIn(BaseModel):
+# ---------- Autopay: incremental savings ladder ----------
+# Accrual runs daily in our database; settlement charges the unsettled sum on the user's
+# chosen cadence. A single plan per cadence bills every subscriber, because Razorpay charges
+# plan.item.amount * quantity and we vary the quantity. See api/ladder.py for the math.
+class AutopaySubscribeIn(BaseModel):
     step_amount: int = Field(gt=0, le=100)
+    cadence: Literal["weekly", "monthly", "manual"]
 
 
-class AutopayActivateIn(BaseModel):
+class AutopayVerifyIn(BaseModel):
     razorpay_payment_id: str
-    razorpay_order_id: str
+    razorpay_subscription_id: str
     razorpay_signature: str
-    razorpay_customer_id: str
 
 
+# Razorpay's own billing period per cadence. Only the sweep frequency differs; the amount is
+# always carried by the quantity.
+_CADENCE_PERIOD = {"weekly": "weekly", "monthly": "monthly"}
 
-def _ensure_rzp_customer(user: dict) -> str:
-    """Get or create a Razorpay customer for this profile."""
-    if user.get("razorpay_customer_id"):
-        return user["razorpay_customer_id"]
-    customer = rzp.customer.create({
-        "name": user.get("display_name") or user.get("email") or "",
-        "email": user.get("email") or "",
-        "fail_existing": 0,
-    })
-    sb.table("profiles").update({"razorpay_customer_id": customer["id"]}) \
-        .eq("id", user["id"]).execute()
-    return customer["id"]
+# Long enough that a subscription outlives the ladder rather than expiring mid-cycle.
+_TOTAL_COUNT = {"weekly": 52, "monthly": 12}
+
+
+def shared_plan_id(cadence: str, key_id: str) -> str:
+    """Get or create the shared Rs 1-per-unit plan for a cadence.
+
+    Cached in razorpay_plans keyed by (cadence, key_id) so that switching between test and
+    live keys never reuses a plan the other environment cannot see.
+    """
+    cached = (sb.table("razorpay_plans").select("razorpay_plan_id")
+              .eq("cadence", cadence).eq("razorpay_key_id", key_id).execute().data)
+    if cached:
+        return cached[0]["razorpay_plan_id"]
+    try:
+        plan = rzp.plan.create({
+            "period": _CADENCE_PERIOD[cadence], "interval": 1,
+            "item": {"name": f"Meenamma Kudam savings ({cadence}, ₹1 unit)",
+                     "amount": ladder.PLAN_UNIT_PAISE, "currency": "INR"}})
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Razorpay plan setup failed: {e}")
+    try:
+        sb.table("razorpay_plans").insert({
+            "cadence": cadence, "razorpay_key_id": key_id, "razorpay_plan_id": plan["id"],
+            "unit_amount_paise": ladder.PLAN_UNIT_PAISE}).execute()
+    except Exception:
+        # Lost a race with a concurrent subscribe; the row that won is equally valid.
+        rows = (sb.table("razorpay_plans").select("razorpay_plan_id")
+                .eq("cadence", cadence).eq("razorpay_key_id", key_id).execute().data)
+        if rows:
+            return rows[0]["razorpay_plan_id"]
+        raise
+    return plan["id"]
 
 
 def autopay_out(p: dict) -> dict:
@@ -807,101 +827,113 @@ def autopay_state(user: dict = Depends(get_current_user)):
     return autopay_out(user)
 
 
-
-
-
-@api.post("/autopay/setup")
-def autopay_setup(body: AutopaySetupIn, user: dict = Depends(get_current_user)):
-    """Create Razorpay customer + first-charge order with recurring=1."""
-    existing_status = user.get("autopay_status") or "none"
-    if existing_status == "active" and user.get("razorpay_token_id"):
-        raise HTTPException(
-            status_code=409,
-            detail="Active autopay already exists. Cancel before creating another.",
-        )
-    key_id = require_razorpay_config()
-    step_paise = body.step_amount * 100
-    customer_id = _ensure_rzp_customer(user)
-    # First charge = day 1 of the ladder
-    first_charge_paise = step_paise
+def _cancel_razorpay_subscription(subscription_id: str) -> None:
+    """Cancel at the provider before changing the local billing state."""
     try:
-        order = rzp.order.create({
-            "amount": first_charge_paise,
-            "currency": "INR",
-            "payment_capture": 1,
-            "notes": {
-                "profile_id": user["id"],
-                "step_paise": str(step_paise),
-                "kind": "autopay_activate",
-            },
-        })
+        rzp.subscription.cancel(subscription_id)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Razorpay order creation failed: {e}")
-    sb.table("profiles").update({
-        "step_paise": step_paise, "autopay_status": "pending", "autopay_cadence": "daily",
-    }).eq("id", user["id"]).execute()
+        raise HTTPException(
+            status_code=502,
+            detail=f"Razorpay subscription cancellation failed: {e}",
+        )
+
+
+def _autopay_checkout_payload(subscription_id: str, key_id: str,
+                              body: AutopaySubscribeIn) -> dict:
+    step_paise = body.step_amount * 100
     return {
-        "order_id": order["id"],
+        "subscription_id": subscription_id,
         "key_id": key_id,
-        "customer_id": customer_id,
         "step_amount": body.step_amount,
-        "first_charge": round(first_charge_paise / 100),
+        "cadence": body.cadence,
+        "max_amount": round(ladder.mandate_max_paise(step_paise) / 100),
+        "cycle_total": round(ladder.cycle_total_paise(step_paise) / 100),
     }
 
 
-@api.post("/autopay/activate")
-def autopay_activate(body: AutopayActivateIn, user: dict = Depends(get_current_user)):
-    """Verify first payment and store the recurring token; starts the 24h charge clock."""
-    require_razorpay_config()
+@api.post("/autopay/subscribe")
+def autopay_subscribe(body: AutopaySubscribeIn, user: dict = Depends(get_current_user)):
+    step_paise = body.step_amount * 100
+    existing_id = user.get("autopay_subscription_id")
+    existing_status = user.get("autopay_status") or "none"
+    if existing_id and existing_status == "active":
+        raise HTTPException(
+            status_code=409,
+            detail="Cancel the current autopay subscription before creating another one.",
+        )
+
+    if existing_id and existing_status == "pending":
+        same_selection = (
+            body.cadence != "manual"
+            and user.get("autopay_cadence") == body.cadence
+            and user.get("step_paise") == step_paise
+        )
+        if same_selection:
+            key_id = require_razorpay_config()
+            return _autopay_checkout_payload(existing_id, key_id, body)
+
+        _cancel_razorpay_subscription(existing_id)
+        sb.table("profiles").update({
+            "autopay_subscription_id": None,
+            "autopay_status": "cancelled",
+        }).eq("id", user["id"]).execute()
+
+    if body.cadence == "manual":
+        p = sb.table("profiles").update({
+            "autopay_subscription_id": None, "autopay_status": "active",
+            "autopay_cadence": "manual", "step_paise": step_paise,
+            "cycle_anchor_date": now_utc().date().isoformat()}) \
+            .eq("id", user["id"]).execute().data[0]
+        p["_role"] = user["_role"]
+        return {**user_public(p), "manual": True, "autopay": autopay_out(p)}
+    key_id = require_razorpay_config()
+    plan_id = shared_plan_id(body.cadence, key_id)
     try:
-        rzp.utility.verify_payment_signature({
-            "razorpay_order_id": body.razorpay_order_id,
-            "razorpay_payment_id": body.razorpay_payment_id,
-            "razorpay_signature": body.razorpay_signature,
-        })
-    except Exception:
-        raise HTTPException(status_code=400, detail="Payment signature verification failed")
-    try:
-        payment = rzp.payment.fetch(body.razorpay_payment_id)
+        sub = rzp.subscription.create({
+            "plan_id": plan_id, "total_count": _TOTAL_COUNT[body.cadence],
+            "quantity": 1, "customer_notify": 0,
+            "notes": {"profile_id": user["id"], "step_paise": str(step_paise),
+                      "cadence": body.cadence}})
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Could not fetch payment: {e}")
-    token_id = payment.get("token_id") or ""
-    now = now_utc()
+        raise HTTPException(status_code=502, detail=f"Razorpay autopay setup failed: {e}")
+    sb.table("profiles").update({
+        "autopay_subscription_id": sub["id"], "autopay_status": "pending",
+        "autopay_cadence": body.cadence, "step_paise": step_paise}) \
+        .eq("id", user["id"]).execute()
+    return _autopay_checkout_payload(sub["id"], key_id, body)
+
+
+@api.post("/autopay/verify")
+def autopay_verify(body: AutopayVerifyIn, user: dict = Depends(get_current_user)):
+    require_razorpay_config()
+    if body.razorpay_subscription_id != user.get("autopay_subscription_id"):
+        raise HTTPException(status_code=400, detail="Autopay subscription does not match this account")
+    try:
+        rzp.utility.verify_subscription_payment_signature({
+            "razorpay_subscription_id": body.razorpay_subscription_id,
+            "razorpay_payment_id": body.razorpay_payment_id,
+            "razorpay_signature": body.razorpay_signature})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Autopay signature verification failed")
+    # Signature verification proves checkout ownership. Razorpay's subscription.activated
+    # webhook is authoritative for mandate activation and starts the accrual clock.
     p = sb.table("profiles").update({
-        "razorpay_customer_id": body.razorpay_customer_id,
-        "razorpay_token_id": token_id,
-        "autopay_status": "active",
-        "autopay_cadence": "daily",
-        "cycle_anchor_date": now.date().isoformat(),
-        "next_charge_at": (now + timedelta(hours=24)).isoformat(),
-    }).eq("id", user["id"]).execute().data[0]
-    # Mark day 1 as settled (first charge just paid it)
-    step_paise = p.get("step_paise") or 0
-    if step_paise > 0:
-        sb.table("autopay_accruals").upsert({
-            "profile_id": user["id"],
-            "debit_date": now.date().isoformat(),
-            "cycle_day": 1,
-            "amount_paise": step_paise,
-            "settled_at": now.isoformat(),
-        }, on_conflict="profile_id,debit_date").execute()
+        "autopay_status": "active" if user.get("autopay_status") == "active" else "pending",
+        "autopay_subscription_id": body.razorpay_subscription_id}) \
+        .eq("id", user["id"]).execute().data[0]
     p["_role"] = user["_role"]
     return {**user_public(p), "autopay": autopay_out(p)}
 
 
 @api.post("/autopay/cancel")
 def autopay_cancel(user: dict = Depends(get_current_user)):
-    # Clear token so the hourly cron stops charging; accruals stay intact
     if user.get("autopay_subscription_id"):
-        try:
-            rzp.subscription.cancel(user["autopay_subscription_id"])
-        except Exception:
-            pass
-    p = sb.table("profiles").update({
-        "razorpay_token_id": None, "next_charge_at": None,
-        "autopay_subscription_id": None,
-        "autopay_status": "cancelled", "autopay_cadence": "manual",
-    }).eq("id", user["id"]).execute().data[0]
+        _cancel_razorpay_subscription(user["autopay_subscription_id"])
+    # Accruals are left untouched: money already owed stays owed and can be settled by link.
+    p = sb.table("profiles").update({"autopay_subscription_id": None,
+                                     "autopay_status": "cancelled",
+                                     "autopay_cadence": "manual"}) \
+        .eq("id", user["id"]).execute().data[0]
     p["_role"] = user["_role"]
     return user_public(p)
 
@@ -909,46 +941,8 @@ def autopay_cancel(user: dict = Depends(get_current_user)):
 def _active_ladder_profiles():
     return (sb.table("profiles")
             .select("id,email,display_name,step_paise,autopay_cadence,"
-                    "cycle_anchor_date,autopay_subscription_id,"
-                    "razorpay_customer_id,razorpay_token_id,next_charge_at")
+                    "cycle_anchor_date,autopay_subscription_id")
             .eq("autopay_status", "active").execute().data)
-
-
-def _active_token_profiles():
-    return (sb.table("profiles")
-            .select("id,email,display_name,step_paise,cycle_anchor_date,"
-                    "razorpay_customer_id,razorpay_token_id,next_charge_at")
-            .eq("autopay_status", "active")
-            .not_.is_("razorpay_token_id", "null")
-            .execute().data)
-
-
-def _charge_token(profile: dict, amount_paise: int) -> str:
-    """Create a Razorpay order and trigger a recurring charge against the stored token."""
-    order = rzp.order.create({
-        "amount": amount_paise, "currency": "INR", "payment_capture": 1,
-        "notes": {"profile_id": profile["id"], "kind": "autopay_accruals"},
-    })
-    rzp.payment.create_recurring_payment({
-        "email": profile.get("email") or "",
-        "contact": profile.get("phone") or "0000000000",
-        "amount": amount_paise, "currency": "INR",
-        "order_id": order["id"],
-        "customer_id": profile["razorpay_customer_id"],
-        "token": profile["razorpay_token_id"],
-        "recurring": "1",
-        "description": "Meenamma kudam daily savings",
-        "notify": {"sms": False, "email": True},
-        "reminder_enable": True,
-    })
-    return order["id"]
-
-
-def _advance_next_charge(profile_id: str) -> None:
-    """Advance next_charge_at by exactly 24h."""
-    sb.table("profiles").update({
-        "next_charge_at": (now_utc() + timedelta(hours=24)).isoformat(),
-    }).eq("id", profile_id).execute()
 
 
 def _parse_anchor(value) -> Optional[date]:
@@ -1084,50 +1078,6 @@ def cron_autopay_daily(for_date: Optional[str] = None):
     target_date = _cron_date(for_date)
     return {"ok": True, "accrual": run_daily_accruals(target_date),
             "pre_notify": run_predebit_sweep(target_date)}
-
-
-@api.get("/cron/autopay/charge", dependencies=[Depends(require_cron)])
-def cron_autopay_charge(for_date: Optional[str] = None):
-    """Hourly cron: accrue today's savings, then charge each user whose 24h window has elapsed.
-
-    Each user has a personal rhythm based on when they enrolled — their next_charge_at
-    is set 24h from activation and advanced by 24h after every charge attempt.
-    """
-    now = now_utc()
-    target_date = date.fromisoformat(for_date) if for_date else now.date()
-
-    # Always record today's ladder rung for all active enrolments (idempotent)
-    accrual_result = run_daily_accruals(target_date)
-
-    # Find users whose 24h charge window has elapsed
-    due_profiles = (
-        sb.table("profiles")
-        .select("id,email,display_name,step_paise,cycle_anchor_date,"
-                "razorpay_customer_id,razorpay_token_id,next_charge_at")
-        .eq("autopay_status", "active")
-        .not_.is_("razorpay_token_id", "null")
-        .lte("next_charge_at", now.isoformat())
-        .execute().data
-    )
-
-    outcomes = {"charged": 0, "skipped": 0, "failed": 0}
-    for profile in due_profiles:
-        accruals = _unsettled_accruals(profile["id"])
-        due = ladder.due_paise(accruals)
-        if due <= 0:
-            _advance_next_charge(profile["id"])
-            outcomes["skipped"] += 1
-            continue
-        try:
-            _charge_token(profile, due)
-            # next_charge_at advances after webhook confirms payment, not here
-            outcomes["charged"] += 1
-        except Exception:
-            _advance_next_charge(profile["id"])  # don't block tomorrow's charge
-            outcomes["failed"] += 1
-
-    return {"ok": True, "date": target_date.isoformat(),
-            "accrual": accrual_result, **outcomes}
 
 
 @api.post("/autopay/payment-link")

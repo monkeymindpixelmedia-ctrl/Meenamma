@@ -3,7 +3,7 @@
   "outputDirectory": "frontend/build",
   "crons": [
     {
-      "path": "/api/cron/autopay/charge",
+      "path": "/api/cron/autopay/daily",
       "schedule": "0 0 * * *"
     }
   ],

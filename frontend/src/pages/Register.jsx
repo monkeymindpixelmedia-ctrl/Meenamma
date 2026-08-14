@@ -15,7 +15,7 @@ export default function Register() {
   const [plan, setPlan] = useState(5);
   const [customStepOpen, setCustomStepOpen] = useState(false);
   const [customStepVal, setCustomStepVal] = useState("");
-  const [cadence, setCadence] = useState("daily");
+  const [cadence, setCadence] = useState("weekly");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -38,11 +38,9 @@ export default function Register() {
   };
 
   const handleCustomStepChange = (val) => {
-    const parsed = parseInt(val, 10);
     setCustomStepVal(val);
-    if (!isNaN(parsed) && parsed > 0 && parsed <= 100) {
-      setPlan(parsed);
-    }
+    const parsed = parseInt(val, 10);
+    if (!isNaN(parsed) && parsed > 0 && parsed <= 100) setPlan(parsed);
   };
 
   const selectPredefinedPlan = (amt) => {
@@ -51,14 +49,7 @@ export default function Register() {
     setPlan(amt);
   };
 
-  const previewStep = plan;
-
-  const cadenceLabel = (c) => {
-    if (c === "daily") return "Daily";
-    if (c === "weekly") return "Weekly";
-    if (c === "monthly") return "Monthly";
-    return "Manual";
-  };
+  const cadenceLabel = (c) => c === "weekly" ? "Weekly" : c === "monthly" ? "Monthly" : "Manual!";
 
   const submit = async () => {
     haptic();
@@ -70,13 +61,15 @@ export default function Register() {
         // Already authenticated via Google OAuth — skip email/password sign-up.
         // Bootstrap updates name, plan, pincode and handles 409 gracefully.
         await api.post("/profile/bootstrap", {
-          name, daily_plan: plan, pincode,
+          name, daily_plan: plan, pincode, cadence,
         });
         loggedInUser = await refreshUser();
       } else {
-        loggedInUser = await register(name, email, password, plan, { pincode });
+        loggedInUser = await register(name, email, password, plan, { pincode, cadence });
       }
-      await setupAutopay(loggedInUser, { stepAmount: plan });
+      if (cadence !== "manual") {
+        await setupAutopay(loggedInUser, { stepAmount: plan, cadence });
+      }
       navigate("/dashboard");
     } catch (err) {
       setError(formatApiErrorDetail(err.response?.data?.detail) || err.message || "Something went wrong. Please try again.");
@@ -193,6 +186,26 @@ export default function Register() {
                 )}
               </fieldset>
 
+              <fieldset className="mt-6">
+                <legend className="text-obsidian/55 text-[9px] uppercase" style={{ letterSpacing: "0.2em" }}>Settle Cadence</legend>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  {["weekly", "monthly", "manual"].map((c) => (
+                    <button
+                      type="button"
+                      key={c}
+                      onClick={() => { haptic(); setCadence(c); }}
+                      aria-pressed={cadence === c}
+                      className={`py-2 text-xs border transition-colors ${cadence === c
+                        ? "border-gold bg-alabaster text-obsidian font-serif italic"
+                        : "border-gold/25 text-obsidian/60"}`}
+                      data-testid={`cadence-option-${c}`}
+                    >
+                      {cadenceLabel(c)}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+
               <button className="btn-obsidian w-full mt-8" onClick={() => { haptic(); setStep(3); }} data-testid="plan-continue-btn">Continue</button>
               <button className="w-full text-obsidian/60 text-xs mt-4 underline underline-offset-4" onClick={() => setStep(1)} data-testid="register-back-btn">Back</button>
             </motion.div>
@@ -200,26 +213,29 @@ export default function Register() {
 
           {step === 3 && (
             <motion.div key="s3" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.3 }}>
-              <h1 className="font-serif text-obsidian text-3xl font-medium text-center">Daily Savings</h1>
-              <p className="text-obsidian/70 text-sm mt-2 text-center">Step 3 · Activate your kudam</p>
-
+              <h1 className="font-serif text-obsidian text-3xl font-medium text-center">
+                {cadence === "manual" ? "Ceremony Setup" : "Setup Autopay"}
+              </h1>
+              <p className="text-obsidian/70 text-sm mt-2 text-center">Step 3 · Confirm plan details</p>
+              
               <div className="card-white p-6 mt-10 space-y-4">
                 <div>
                   <p className="text-obsidian/55 text-[9px] uppercase" style={{ letterSpacing: "0.15em" }}>Daily step amount</p>
                   <p className="num text-obsidian text-2xl mt-1">₹{plan}</p>
                 </div>
                 <div>
-                  <p className="text-obsidian/55 text-[9px] uppercase" style={{ letterSpacing: "0.15em" }}>Charge rhythm</p>
-                  <p className="text-obsidian text-lg font-serif mt-1">Every 24 hours</p>
+                  <p className="text-obsidian/55 text-[9px] uppercase" style={{ letterSpacing: "0.15em" }}>Settlement cadence</p>
+                  <p className="text-obsidian text-lg font-serif mt-1">{cadenceLabel(cadence)}</p>
                 </div>
                 <div className="border-t border-gold/20 pt-4">
                   <p className="text-obsidian/65 text-xs leading-5 font-serif italic">
-                    A first charge of ₹{plan} will authenticate your payment method.
-                    After that, your savings accrue daily and the balance is collected automatically every 24 hours.
+                    {cadence === "manual"
+                      ? "Your savings will accrue daily. You can settle the balance manually whenever you are ready."
+                      : `A secure Razorpay mandate will be configured to automatically sweep and settle the accrued balance on a ${cadence} basis.`}
                   </p>
                 </div>
               </div>
-
+              
               {error && <p className="text-obsidian text-sm italic font-serif mt-4">{error}</p>}
 
               <button className="btn-obsidian w-full mt-8" onClick={submit} disabled={busy} data-testid="register-submit-btn">
