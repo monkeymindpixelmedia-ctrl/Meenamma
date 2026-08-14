@@ -88,7 +88,7 @@ def test_auth_configures_required_recipes_google_and_official_middleware(configu
     assert init_call["app_info"].api_base_path == "/api/auth"
     assert init_call["recipe_list"] == ["emailpassword", "thirdparty", "emailverification", "session"]
     verification_args, verification_kwargs = calls["recipes"]["emailverification"]
-    assert (verification_args or (verification_kwargs["mode"],)) == ("REQUIRED",)
+    assert (verification_args or (verification_kwargs["mode"],)) == ("OPTIONAL",)
     assert auth.supertokens_middleware is fake_middleware
 
     _, thirdparty_kwargs = calls["recipes"]["thirdparty"]
@@ -181,6 +181,15 @@ def test_profile_bootstrap_uses_session_identity_not_client_email(configured_aut
     upserts = []
 
     class ProfilesQuery:
+        def select(self, *args, **kwargs):
+            return self
+
+        def eq(self, *args, **kwargs):
+            return self
+
+        def insert(self, *args, **kwargs):
+            return self
+
         def upsert(self, row, **kwargs):
             upserts.append((row, kwargs))
             return self
