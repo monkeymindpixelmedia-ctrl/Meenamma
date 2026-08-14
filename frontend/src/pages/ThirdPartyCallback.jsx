@@ -23,15 +23,19 @@ export default function ThirdPartyCallback() {
         if (response.status === "SIGN_IN_UP_NOT_ALLOWED") throw new Error(response.reason);
         if (response.status !== "OK") throw new Error("Google sign-in could not be completed.");
 
+        const route = (u) => {
+          if (!u) return "/auth/verify-email";
+          // Send to onboarding if autopay was never set up or step not configured
+          const onboarded = u.autopay_status === "active" ||
+                            (u.step_paise && u.step_paise > 0);
+          return onboarded ? "/dashboard" : "/register";
+        };
+
         if (response.createdNewRecipeUser) {
-          const { data } = await api.post("/profile/bootstrap", { name: "Meenamma Member" });
-          const appUser = await refreshUser();
-          // Genuinely new profile → onboarding; existing profile found by email → dashboard
-          navigate(data?.is_new ? "/register" : (appUser ? "/dashboard" : "/auth/verify-email"), { replace: true });
-        } else {
-          const appUser = await refreshUser();
-          navigate(appUser ? "/dashboard" : "/auth/verify-email", { replace: true });
+          await api.post("/profile/bootstrap", { name: "Meenamma Member" });
         }
+        const appUser = await refreshUser();
+        navigate(route(appUser), { replace: true });
       } catch (err) {
         setError(err.message || "Google sign-in could not be completed.");
       }
