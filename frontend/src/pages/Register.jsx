@@ -15,7 +15,7 @@ export default function Register() {
   const [plan, setPlan] = useState(5);
   const [customStepOpen, setCustomStepOpen] = useState(false);
   const [customStepVal, setCustomStepVal] = useState("");
-  const [cadence, setCadence] = useState("daily");
+  const [cadence, setCadence] = useState("weekly");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -186,7 +186,7 @@ export default function Register() {
               <fieldset className="mt-6">
                 <legend className="text-obsidian/55 text-[9px] uppercase" style={{ letterSpacing: "0.2em" }}>Settle Cadence</legend>
                 <div className="grid grid-cols-2 gap-2 mt-2">
-                  {["daily", "weekly", "monthly", "manual"].map((c) => (
+                  {["weekly", "monthly", "manual"].map((c) => (
                     <button
                       type="button"
                       key={c}

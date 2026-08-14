@@ -752,7 +752,7 @@ async def razorpay_webhook(request: Request):
 # plan.item.amount * quantity and we vary the quantity. See api/ladder.py for the math.
 class AutopaySubscribeIn(BaseModel):
     step_amount: int = Field(gt=0, le=100)
-    cadence: Literal["daily", "weekly", "monthly", "manual"]
+    cadence: Literal["weekly", "monthly", "manual"]
 
 
 class AutopayVerifyIn(BaseModel):
@@ -763,10 +763,10 @@ class AutopayVerifyIn(BaseModel):
 
 # Razorpay's own billing period per cadence. Only the sweep frequency differs; the amount is
 # always carried by the quantity.
-_CADENCE_PERIOD = {"daily": "daily", "weekly": "weekly", "monthly": "monthly"}
+_CADENCE_PERIOD = {"weekly": "weekly", "monthly": "monthly"}
 
 # Long enough that a subscription outlives the ladder rather than expiring mid-cycle.
-_TOTAL_COUNT = {"daily": 365, "weekly": 52, "monthly": 12}
+_TOTAL_COUNT = {"weekly": 52, "monthly": 12}
 
 
 def shared_plan_id(cadence: str, key_id: str) -> str:
