@@ -19,6 +19,13 @@ export default function Register() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [pwTouched, setPwTouched] = useState(false);
+
+  const pwRules = [
+    { ok: password.length >= 8, label: "At least 8 characters" },
+    { ok: /[0-9]/.test(password),  label: "At least one number" },
+  ];
+  const pwValid = pwRules.every((r) => r.ok);
 
   const toStep2 = (e) => {
     e.preventDefault();
@@ -89,10 +96,34 @@ export default function Register() {
               <form onSubmit={toStep2} className="space-y-6 mt-10">
                 <input className="input-minimal" placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} required data-testid="register-name-input" />
                 <input className="input-minimal" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required data-testid="register-email-input" />
-                <input className="input-minimal" type="password" placeholder="Password (min 6 characters)" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} data-testid="register-password-input" />
+                <div>
+                  <input
+                    className="input-minimal"
+                    type="password"
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => { setPassword(e.target.value); setPwTouched(true); }}
+                    required
+                    data-testid="register-password-input"
+                  />
+                  {pwTouched && (
+                    <motion.ul
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mt-2 space-y-1"
+                    >
+                      {pwRules.map((r) => (
+                        <li key={r.label} className={`flex items-center gap-1.5 text-xs font-serif transition-colors duration-200 ${r.ok ? "text-green-700" : "text-obsidian/60"}`}>
+                          <span>{r.ok ? "✓" : "·"}</span>
+                          {r.label}
+                        </li>
+                      ))}
+                    </motion.ul>
+                  )}
+                </div>
                 <input className="input-minimal num" placeholder="PIN code (delivery area)" value={pincode} onChange={(e) => setPincode(e.target.value)} pattern="[0-9]{6}" maxLength={6} required data-testid="register-pincode-input" />
                 {error && <p className="text-obsidian text-sm italic font-serif" data-testid="register-error">{error}</p>}
-                <button className="btn-obsidian w-full" disabled={checking} data-testid="register-next-btn">
+                <button className="btn-obsidian w-full" disabled={checking || !pwValid} data-testid="register-next-btn">
                   {checking ? "Checking serviceability…" : "Continue"}
                 </button>
                 {checking && (
