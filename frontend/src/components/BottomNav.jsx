@@ -23,7 +23,7 @@ export default function BottomNav() {
             to={to}
             data-testid={`nav-${(key || to).replace("/", "")}`}
             className={({ isActive }) =>
-              `p-3 transition-colors duration-300 ${isActive ? "text-henna" : "text-gold"}`
+              `p-3 transition-colors duration-300 ${isActive ? "text-obsidian" : "text-gold"}`
             }
           >
             <Icon size={22} strokeWidth={1.5} />

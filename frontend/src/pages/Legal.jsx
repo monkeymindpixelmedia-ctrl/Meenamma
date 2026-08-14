@@ -61,19 +61,19 @@ export default function Legal() {
 
   if (!data) {
     return (
-      <div className="min-h-screen bg-sandalwood-paper pt-24 px-4 flex items-start justify-center">
+      <div className="min-h-screen bg-alabaster-paper pt-24 px-4 flex items-start justify-center">
         <p className="font-serif italic text-gold-dim">Policy not found.</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-[80vh] bg-sandalwood-paper pt-24 pb-32 px-4 md:px-8">
+    <div className="min-h-[80vh] bg-alabaster-paper pt-24 pb-32 px-4 md:px-8">
       <div className="max-w-3xl mx-auto">
-        <h1 className="font-serif text-3xl md:text-4xl text-henna mb-12 text-center" style={{ letterSpacing: "0.05em" }}>
+        <h1 className="font-serif text-3xl md:text-4xl text-obsidian mb-12 text-center" style={{ letterSpacing: "0.05em" }}>
           {data.title}
         </h1>
-        <div className="text-henna/80 leading-relaxed font-sans space-y-6 whitespace-pre-wrap">
+        <div className="text-obsidian/80 leading-relaxed font-sans space-y-6 whitespace-pre-wrap">
           {data.content.trim().split('\\n\\n').map((paragraph, idx) => {
             const isBold = paragraph.trim().startsWith('**');
             return (

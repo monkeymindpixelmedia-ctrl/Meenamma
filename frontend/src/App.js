@@ -19,7 +19,7 @@ function Protected({ children }) {
   const { user } = useAuth();
   if (user === null)
     return (
-      <div className="min-h-screen bg-sandalwood-paper flex items-center justify-center">
+      <div className="min-h-screen bg-alabaster-paper flex items-center justify-center">
         <p className="font-serif italic text-gold-dim">Unlocking the door…</p>
       </div>
     );
@@ -39,7 +39,7 @@ function Shell() {
   const location = useLocation();
   const showChrome = NAV_PAGES.includes(location.pathname);
   return (
-    <div className="w-full min-h-screen bg-sandalwood-paper flex flex-col">
+    <div className="w-full min-h-screen bg-alabaster-paper flex flex-col">
       {showChrome && <Header />}
       <div className="flex-grow">
         <Routes>

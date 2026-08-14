@@ -14,7 +14,7 @@ export default function Splash() {
 
   return (
     <div
-      className="min-h-screen bg-sandalwood-paper paper-texture flex flex-col items-center justify-center cursor-pointer overflow-hidden"
+      className="min-h-screen bg-alabaster-paper paper-texture flex flex-col items-center justify-center cursor-pointer overflow-hidden"
       onClick={() => navigate("/home")}
       data-testid="splash-screen"
     >
@@ -59,7 +59,7 @@ export default function Splash() {
       </motion.svg>
 
       <motion.h1
-        className="font-serif text-henna text-4xl md:text-5xl mt-8 font-medium"
+        className="font-serif text-obsidian text-4xl md:text-5xl mt-8 font-medium"
         style={{ letterSpacing: "0.35em", textIndent: "0.35em" }}
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
@@ -77,7 +77,7 @@ export default function Splash() {
       />
 
       <motion.p
-        className="text-henna/50 text-[10px] uppercase mt-6"
+        className="text-obsidian/50 text-[10px] uppercase mt-6"
         style={{ letterSpacing: "0.5em", textIndent: "0.5em" }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}

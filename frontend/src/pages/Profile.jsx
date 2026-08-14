@@ -39,11 +39,11 @@ export default function Profile() {
   };
 
   return (
-    <div className="min-h-screen bg-sandalwood-paper paper-texture pb-24 md:pb-16" data-testid="profile-page">
+    <div className="min-h-screen bg-alabaster-paper paper-texture pb-24 md:pb-16" data-testid="profile-page">
       <div className="max-w-xl mx-auto px-4 md:px-8 pt-10">
         <p className="text-gold-dim text-[10px] uppercase" style={{ letterSpacing: "0.4em" }}>Your household</p>
         <div className="flex items-center justify-between">
-          <h1 className="font-serif text-henna text-3xl md:text-4xl font-medium">Profile</h1>
+          <h1 className="font-serif text-obsidian text-3xl md:text-4xl font-medium">Profile</h1>
           {user?.role === "admin" && (
             <span className="flex items-center gap-1 text-gold-dim text-[10px] uppercase" style={{ letterSpacing: "0.2em" }}>
               <Crown size={14} /> Store Admin
@@ -59,15 +59,15 @@ export default function Profile() {
           transition={{ duration: 0.5 }}
         >
           <div>
-            <label className="text-henna/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>Name</label>
+            <label className="text-obsidian/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>Name</label>
             <input className="input-minimal" value={name} onChange={(e) => setName(e.target.value)} required data-testid="profile-name-input" />
           </div>
           <div>
-            <label className="text-henna/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>Email</label>
-            <p className="text-henna/80 text-sm py-3 border-b border-gold/25" data-testid="profile-email">{user?.email}</p>
+            <label className="text-obsidian/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>Email</label>
+            <p className="text-obsidian/80 text-sm py-3 border-b border-gold/25" data-testid="profile-email">{user?.email}</p>
           </div>
           <div>
-            <label className="text-henna/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>Daily savings plan</label>
+            <label className="text-obsidian/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>Daily savings plan</label>
             <div className="flex gap-3 mt-3">
               {PLANS.map((p) => (
                 <button
@@ -76,30 +76,30 @@ export default function Profile() {
                   onClick={() => { haptic(); setPlan(p); }}
                   data-testid={`profile-plan-${p}`}
                   className={`flex-1 py-3 border transition-all duration-300 ${
-                    Number(plan) === p ? "border-gold bg-sandalwood/70 shadow-[0_0_0_1px_#C5A059]" : "border-gold/30 bg-white"
+                    Number(plan) === p ? "border-gold bg-alabaster/70 shadow-[0_0_0_1px_#C5A059]" : "border-gold/30 bg-white"
                   }`}
                 >
-                  <span className="num-lg text-henna text-xl"><span className="rupee">₹</span>{p}</span>
-                  <span className="text-henna/60 text-[10px] block">per day</span>
+                  <span className="num-lg text-obsidian text-xl"><span className="rupee">₹</span>{p}</span>
+                  <span className="text-obsidian/60 text-[10px] block">per day</span>
                 </button>
               ))}
             </div>
           </div>
           <div>
-            <label className="text-henna/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>PIN code</label>
+            <label className="text-obsidian/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>PIN code</label>
             <input className="input-minimal num" value={pincode} onChange={(e) => setPincode(e.target.value)} maxLength={6} data-testid="profile-pincode-input" />
           </div>
           <div>
-            <label className="text-henna/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>UPI ID</label>
+            <label className="text-obsidian/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>UPI ID</label>
             <input className="input-minimal" value={upi} onChange={(e) => setUpi(e.target.value)} placeholder="yourname@upi" data-testid="profile-upi-input" />
           </div>
-          {msg && <p className="text-henna text-sm italic font-serif" data-testid="profile-msg">{msg}</p>}
-          <button className="btn-henna w-full" disabled={busy} data-testid="profile-save-btn">
+          {msg && <p className="text-obsidian text-sm italic font-serif" data-testid="profile-msg">{msg}</p>}
+          <button className="btn-obsidian w-full" disabled={busy} data-testid="profile-save-btn">
             {busy ? "Saving…" : "Save changes"}
           </button>
         </motion.form>
 
-        <button className="w-full flex items-center justify-center gap-2 mt-6 py-3 text-henna/70 hover:text-henna text-xs uppercase transition-colors" style={{ letterSpacing: "0.2em" }} onClick={doLogout} data-testid="profile-logout-btn">
+        <button className="w-full flex items-center justify-center gap-2 mt-6 py-3 text-obsidian/70 hover:text-obsidian text-xs uppercase transition-colors" style={{ letterSpacing: "0.2em" }} onClick={doLogout} data-testid="profile-logout-btn">
           <LogOut size={14} /> Sign out
         </button>
       </div>

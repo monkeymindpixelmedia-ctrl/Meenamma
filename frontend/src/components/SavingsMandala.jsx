@@ -66,7 +66,7 @@ export const SavingsMandala = ({ progress, size = 288 }) => {
         </motion.div>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span
-            className="num-lg text-henna"
+            className="num-lg text-obsidian"
             style={{ fontSize: size * 0.155, textShadow: "0 1px 6px rgba(255,255,255,0.7)" }}
             data-testid="mandala-progress-pct"
           >

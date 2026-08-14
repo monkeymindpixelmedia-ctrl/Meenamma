@@ -10,8 +10,8 @@ const STATUSES = ["confirmed", "ready", "delivered", "cancelled"];
 function Stat({ label, value }) {
   return (
     <div className="filigree-card p-6 text-center">
-      <p className="num-lg text-henna text-3xl">{value}</p>
-      <p className="text-henna/60 text-[9px] uppercase mt-1" style={{ letterSpacing: "0.3em" }}>{label}</p>
+      <p className="num-lg text-obsidian text-3xl">{value}</p>
+      <p className="text-obsidian/60 text-[9px] uppercase mt-1" style={{ letterSpacing: "0.3em" }}>{label}</p>
     </div>
   );
 }
@@ -64,12 +64,12 @@ function ProductForm({ initial, onSave, onCancel, busy }) {
 
       <textarea className="input-ritual" rows={2} placeholder="Source story" value={form.story} onChange={set("story")} />
       <input className="input-ritual" placeholder="Handling note" value={form.handling} onChange={set("handling")} />
-      <label className="flex items-center gap-2 text-henna/70 text-xs">
+      <label className="flex items-center gap-2 text-obsidian/70 text-xs">
         <input type="checkbox" checked={form.available} onChange={(e) => setForm({ ...form, available: e.target.checked })} className="accent-gold" data-testid="product-available-checkbox" />
         Available today
       </label>
       <div className="flex gap-3">
-        <button className="btn-henna flex-1" disabled={busy} data-testid="product-save-btn">Save</button>
+        <button className="btn-obsidian flex-1" disabled={busy} data-testid="product-save-btn">Save</button>
         <button type="button" className="btn-gold-outline flex-1" onClick={onCancel}>Cancel</button>
       </div>
     </form>
@@ -129,10 +129,10 @@ export default function Admin() {
   };
 
   return (
-    <div className="min-h-screen bg-sandalwood-paper paper-texture pb-24 md:pb-16" data-testid="admin-page">
+    <div className="min-h-screen bg-alabaster-paper paper-texture pb-24 md:pb-16" data-testid="admin-page">
       <div className="max-w-[1600px] mx-auto px-4 md:px-8 lg:px-16 pt-8">
         <p className="text-gold-dim text-[10px] uppercase" style={{ letterSpacing: "0.4em" }}>Store Manager</p>
-        <h1 className="font-serif text-henna text-3xl md:text-4xl font-medium">Meenamma Store</h1>
+        <h1 className="font-serif text-obsidian text-3xl md:text-4xl font-medium">Meenamma Store</h1>
 
         <div className="flex gap-1 mt-6 overflow-x-auto border-b border-gold/25">
           {TABS.map((t) => (
@@ -141,7 +141,7 @@ export default function Admin() {
               onClick={() => setTab(t)}
               data-testid={`admin-tab-${t.toLowerCase()}`}
               className={`px-5 py-3 text-[10px] uppercase whitespace-nowrap border-b-2 -mb-px transition-colors duration-300 ${
-                tab === t ? "text-henna font-semibold border-gold" : "text-henna/40 border-transparent"
+                tab === t ? "text-obsidian font-semibold border-gold" : "text-obsidian/40 border-transparent"
               }`}
               style={{ letterSpacing: "0.22em" }}
             >
@@ -150,7 +150,7 @@ export default function Admin() {
           ))}
         </div>
 
-        {msg && <p className="text-henna text-xs italic font-serif mt-4">{msg}</p>}
+        {msg && <p className="text-obsidian text-xs italic font-serif mt-4">{msg}</p>}
 
         <div className="pt-8">
           {tab === "Overview" && stats && (
@@ -181,19 +181,19 @@ export default function Admin() {
                     <div className="card-white p-4 flex items-center gap-4">
                       <img src={imgUrl(p.image)} alt={p.name} className="w-14 h-14 object-cover rounded-full border border-gold/50" />
                       <div className="flex-1 min-w-0">
-                        <p className="font-serif text-henna text-lg leading-tight">{p.name}</p>
-                        <p className="num text-henna/75 text-xs"><span className="rupee">₹</span>{p.price_per_kg}/kg</p>
+                        <p className="font-serif text-obsidian text-lg leading-tight">{p.name}</p>
+                        <p className="num text-obsidian/75 text-xs"><span className="rupee">₹</span>{p.price_per_kg}/kg</p>
                       </div>
                       <button
                         onClick={() => toggleAvailable(p)}
                         data-testid={`admin-toggle-${p.name.toLowerCase()}`}
-                        className={`relative w-11 h-6 rounded-full transition-colors duration-300 ${p.available ? "bg-gold" : "bg-henna/20"}`}
+                        className={`relative w-11 h-6 rounded-full transition-colors duration-300 ${p.available ? "bg-gold" : "bg-obsidian/20"}`}
                         title={p.available ? "Available — click to hide" : "Hidden — click to show"}
                       >
                         <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all duration-300 ${p.available ? "left-[22px]" : "left-0.5"}`} />
                       </button>
                       <button onClick={() => setEditing(p)} className="text-gold-dim p-2" data-testid={`admin-edit-${p.name.toLowerCase()}`}><Pencil size={16} /></button>
-                      <button onClick={() => deleteProduct(p.id)} className="text-henna/40 p-2" data-testid={`admin-delete-${p.name.toLowerCase()}`}><Trash2 size={16} /></button>
+                      <button onClick={() => deleteProduct(p.id)} className="text-obsidian/40 p-2" data-testid={`admin-delete-${p.name.toLowerCase()}`}><Trash2 size={16} /></button>
                     </div>
                     <AnimatePresence>
                       {editing && editing !== "new" && editing.id === p.id && (
@@ -210,16 +210,16 @@ export default function Admin() {
 
           {tab === "Orders" && (
             <div className="space-y-3 max-w-3xl" data-testid="admin-bookings-list">
-              {bookings.length === 0 && <p className="text-henna/50 font-serif italic mt-8">No orders yet.</p>}
+              {bookings.length === 0 && <p className="text-obsidian/50 font-serif italic mt-8">No orders yet.</p>}
               {bookings.map((b) => (
                 <div key={b.id} className="card-white p-5">
                   <div className="flex justify-between flex-wrap gap-2">
                     <div>
-                      <p className="font-serif text-henna text-lg">{b.product_name} · {b.qty_kg} kg</p>
-                      <p className="text-henna/50 text-[11px]">{b.user?.name} ({b.user?.email})</p>
-                      <p className="text-henna/50 text-[11px]">Delivery {b.pickup_date}{b.discount_percent > 0 && ` · ${b.discount_percent}% kudam discount`}</p>
+                      <p className="font-serif text-obsidian text-lg">{b.product_name} · {b.qty_kg} kg</p>
+                      <p className="text-obsidian/50 text-[11px]">{b.user?.name} ({b.user?.email})</p>
+                      <p className="text-obsidian/50 text-[11px]">Delivery {b.pickup_date}{b.discount_percent > 0 && ` · ${b.discount_percent}% kudam discount`}</p>
                     </div>
-                    <p className="text-henna text-base">₹{b.amount.toLocaleString("en-IN")}</p>
+                    <p className="text-obsidian text-base">₹{b.amount.toLocaleString("en-IN")}</p>
                   </div>
                   <div className="flex gap-2 mt-4">
                     {STATUSES.map((s) => (
@@ -227,7 +227,7 @@ export default function Admin() {
                         key={s}
                         onClick={() => setStatus(b.id, s)}
                         className={`flex-1 py-2 text-[9px] uppercase border transition-colors duration-300 ${
-                          b.status === s ? "border-henna bg-henna text-gold-shimmer font-semibold" : "border-gold/30 text-henna/50"
+                          b.status === s ? "border-obsidian bg-obsidian text-gold-shimmer font-semibold" : "border-gold/30 text-obsidian/50"
                         }`}
                         style={{ letterSpacing: "0.12em" }}
                         data-testid={`booking-status-${s}-${b.id}`}
@@ -243,16 +243,16 @@ export default function Admin() {
 
           {tab === "Kudams" && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl" data-testid="admin-kudams-list">
-              {kudams.length === 0 && <p className="text-henna/50 font-serif italic mt-8">No kudams yet.</p>}
+              {kudams.length === 0 && <p className="text-obsidian/50 font-serif italic mt-8">No kudams yet.</p>}
               {kudams.map((k) => (
                 <div key={k.id} className="filigree-card p-5">
                   <div className="flex justify-between items-center">
                     <div>
-                      <p className="font-serif text-henna text-lg font-medium">{k.name}</p>
-                      <p className="text-henna/50 text-[11px]">{k.user?.name} ({k.user?.email})</p>
+                      <p className="font-serif text-obsidian text-lg font-medium">{k.name}</p>
+                      <p className="text-obsidian/50 text-[11px]">{k.user?.name} ({k.user?.email})</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-henna text-sm">₹{k.saved_amount.toLocaleString("en-IN")} / ₹{k.goal_amount.toLocaleString("en-IN")}</p>
+                      <p className="text-obsidian text-sm">₹{k.saved_amount.toLocaleString("en-IN")} / ₹{k.goal_amount.toLocaleString("en-IN")}</p>
                       <p className="text-gold-dim text-[9px] uppercase" style={{ letterSpacing: "0.2em" }}>{k.status}</p>
                     </div>
                   </div>
@@ -269,10 +269,10 @@ export default function Admin() {
               {users.map((u) => (
                 <div key={u.id} className="card-white p-5 flex justify-between items-center">
                   <div>
-                    <p className="font-serif text-henna text-lg">{u.name} {u.role === "admin" && <span className="text-gold-dim text-[9px] uppercase ml-1">admin</span>}</p>
-                    <p className="text-henna/50 text-[11px]">{u.email}</p>
+                    <p className="font-serif text-obsidian text-lg">{u.name} {u.role === "admin" && <span className="text-gold-dim text-[9px] uppercase ml-1">admin</span>}</p>
+                    <p className="text-obsidian/50 text-[11px]">{u.email}</p>
                   </div>
-                  <p className="text-henna/60 text-[10px] text-right" style={{ letterSpacing: "0.1em" }}>
+                  <p className="text-obsidian/60 text-[10px] text-right" style={{ letterSpacing: "0.1em" }}>
                     {u.kudam_count} kudams<br />{u.booking_count} orders
                   </p>
                 </div>

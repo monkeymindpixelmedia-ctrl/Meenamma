@@ -12,10 +12,10 @@ const CLAY_KUDAM = `${IMG}/f6829c8557f0cc646b967426a647783117dacf37a36ce0192c022
 const FEAST = `${IMG}/880d5ee129a9829ef575043fe6d11de04df38d6a5f2a89093d9adbbb94d00b02.jpeg`;
 
 const fadeUp = {
-  initial: { opacity: 0, y: 24 },
+  initial: { opacity: 0, y: 30 },
   whileInView: { opacity: 1, y: 0 },
   viewport: { once: true, margin: "-60px" },
-  transition: { duration: 0.7, ease: [0.22, 1, 0.36, 1] },
+  transition: { type: "spring", stiffness: 70, damping: 20, mass: 1 },
 };
 
 function CountUp({ value, prefix = "", suffix = "" }) {
@@ -25,7 +25,7 @@ function CountUp({ value, prefix = "", suffix = "" }) {
     if (!inView || ref.current == null) return;
     const controls = animate(0, value, {
       duration: 1.6,
-      ease: [0.22, 1, 0.36, 1],
+      ease: [0.16, 1, 0.3, 1], // Emil Kowalski signature ease
       onUpdate: (v) => {
         if (ref.current) ref.current.textContent = `${prefix}${Math.round(v).toLocaleString("en-IN")}${suffix}`;
       },
@@ -48,23 +48,23 @@ function LiveDashboard({ stats }) {
     : [];
   return (
     <motion.section {...fadeUp} className="max-w-[1600px] mx-auto px-4 md:px-8 lg:px-16 -mt-14 lg:-mt-20 relative z-10" data-testid="live-catch-dashboard">
-      <div className="bg-henna text-sandalwood shadow-2xl border border-gold/40">
+      <div className="bg-obsidian text-alabaster shadow-2xl border border-obsidian-light/30">
         <div className="flex items-center gap-3 px-6 lg:px-10 pt-6">
           <motion.span
             className="w-2 h-2 rounded-full bg-gold"
             animate={{ opacity: [1, 0.3, 1], scale: [1, 1.4, 1] }}
-            transition={{ duration: 1.6, repeat: Infinity }}
+            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
           />
-          <p className="text-gold text-[10px] uppercase" style={{ letterSpacing: "0.45em" }}>
-            The Live Ledger · counted from the harbour, not invented
+          <p className="text-gold text-[10px] uppercase tracking-[0.45em]">
+            The Live Ledger · counted from the harbour
           </p>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 divide-x divide-y lg:divide-y-0 divide-gold/15 mt-4 border-t border-gold/20">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 divide-x divide-y lg:divide-y-0 divide-alabaster/10 mt-4 border-t border-alabaster/10">
           {stats === null
             ? [...Array(6)].map((_, i) => (
                 <div key={i} className="px-6 py-7">
-                  <div className="h-8 w-16 bg-gold/10 animate-pulse" />
-                  <div className="h-2 w-24 bg-gold/10 animate-pulse mt-3" />
+                  <div className="h-8 w-16 bg-alabaster/5 animate-pulse" />
+                  <div className="h-2 w-24 bg-alabaster/5 animate-pulse mt-3" />
                 </div>
               ))
             : cells.map((c) => (
@@ -72,7 +72,7 @@ function LiveDashboard({ stats }) {
                   <p className="num-lg text-gold text-2xl lg:text-3xl">
                     <CountUp value={c.value} prefix={c.prefix || ""} />
                   </p>
-                  <p className="text-sandalwood/60 text-[9px] uppercase mt-2 leading-4" style={{ letterSpacing: "0.22em" }}>
+                  <p className="text-alabaster/50 text-[9px] uppercase mt-2 leading-4 tracking-[0.25em]">
                     {c.label}
                   </p>
                 </div>
@@ -117,42 +117,45 @@ const CHAPTERS = [
 
 function Journey() {
   return (
-    <section className="max-w-[1600px] mx-auto px-4 md:px-8 lg:px-16 py-16 lg:py-24" data-testid="narrative-journey">
-      <motion.p {...fadeUp} className="text-gold-dim text-[10px] uppercase" style={{ letterSpacing: "0.45em" }}>
+    <section className="max-w-[1600px] mx-auto px-4 md:px-8 lg:px-16 py-24 lg:py-32" data-testid="narrative-journey">
+      <motion.p {...fadeUp} className="text-gold-dim text-[10px] uppercase tracking-[0.45em]">
         The Journey · sea to table in one tide
       </motion.p>
-      <motion.h2 {...fadeUp} className="font-serif text-henna text-3xl md:text-4xl lg:text-5xl font-medium mt-3 max-w-2xl">
+      <motion.h2 {...fadeUp} className="font-serif text-obsidian text-3xl md:text-5xl lg:text-6xl font-medium mt-4 max-w-3xl leading-[1.1]">
         Follow one fish, from the dark water to your dawn table.
       </motion.h2>
-      <div className="mt-12 lg:mt-16 space-y-16 lg:space-y-24">
+      <div className="mt-16 lg:mt-24 space-y-24 lg:space-y-32">
         {CHAPTERS.map((c, i) => (
           <motion.div
             key={c.time}
-            {...fadeUp}
-            className={`grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-14 items-center ${i % 2 ? "lg:direction-rtl" : ""}`}
+            initial={{ opacity: 0, y: 40 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ type: "spring", stiffness: 60, damping: 20 }}
+            className={`grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-center ${i % 2 ? "lg:direction-rtl" : ""}`}
             data-testid={c.testid}
           >
             <div className={`lg:col-span-7 ${i % 2 ? "lg:order-2" : ""}`}>
-              <div className={`overflow-hidden border border-gold/30 ${c.portrait ? "max-h-[520px]" : ""}`}>
+              <div className={`overflow-hidden border-[0.5px] border-obsidian/10 ${c.portrait ? "max-h-[600px]" : ""}`}>
                 <motion.img
                   src={c.image}
                   alt={c.title}
-                  className={`w-full h-full object-cover ${c.portrait ? "object-bottom" : ""}`}
+                  className={`w-full h-full object-cover filter brightness-[0.95] contrast-[1.05] ${c.portrait ? "object-bottom" : ""}`}
                   loading="lazy"
-                  initial={{ scale: 1.08 }}
-                  whileInView={{ scale: 1 }}
+                  initial={{ scale: 1.1, opacity: 0 }}
+                  whileInView={{ scale: 1, opacity: 1 }}
                   viewport={{ once: true }}
-                  transition={{ duration: 1.4, ease: [0.22, 1, 0.36, 1] }}
+                  transition={{ duration: 1.8, ease: [0.16, 1, 0.3, 1] }}
                 />
               </div>
             </div>
             <div className={`lg:col-span-5 ${i % 2 ? "lg:order-1" : ""}`}>
               <div className="flex items-center gap-4">
                 <span className="num-lg text-gold text-xl">{c.time}</span>
-                <span className="flex-1 h-px bg-gold/30" />
+                <span className="flex-1 h-[0.5px] bg-obsidian/10" />
               </div>
-              <h3 className="font-serif text-henna text-2xl lg:text-4xl font-medium mt-4">{c.title}</h3>
-              <p className="text-henna/80 text-base leading-8 mt-5 max-w-md">{c.body}</p>
+              <h3 className="font-serif text-obsidian text-3xl lg:text-5xl font-medium mt-6">{c.title}</h3>
+              <p className="text-obsidian/60 text-base leading-relaxed mt-6 max-w-md">{c.body}</p>
             </div>
           </motion.div>
         ))}
@@ -171,28 +174,27 @@ export default function Landing() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-sandalwood-paper paper-texture pb-24 md:pb-0" data-testid="landing-page">
+    <div className="min-h-screen bg-alabaster paper-texture pb-24 md:pb-0" data-testid="landing-page">
       {/* Cinematic hero */}
-      <section className="relative w-full overflow-hidden" data-testid="landing-hero">
+      <section className="relative w-full h-[85vh] lg:h-screen min-h-[600px] overflow-hidden" data-testid="landing-hero">
         <div className="absolute inset-0">
-          <img src={HERO} alt="Kasimedu boats at dawn" className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#2b0f0b] via-[#2b0f0b]/70 to-[#2b0f0b]/30" />
+          <img src={HERO} alt="Kasimedu boats at dawn" className="w-full h-full object-cover filter brightness-[0.8] contrast-[1.1]" />
+          <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-obsidian/40 to-transparent" />
         </div>
-        <div className="relative max-w-[1600px] mx-auto px-4 md:px-8 lg:px-16 pt-24 lg:pt-36 pb-28 lg:pb-40">
+        <div className="absolute inset-0 flex flex-col justify-end max-w-[1600px] mx-auto px-4 md:px-8 lg:px-16 pb-28 lg:pb-32">
           <motion.p
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.1 }}
-            className="text-gold text-[10px] md:text-xs uppercase mb-6"
-            style={{ letterSpacing: "0.45em" }}
+            className="text-gold text-[10px] md:text-xs uppercase mb-6 tracking-[0.45em]"
           >
             Kasimedu · Since the first tide
           </motion.p>
           <motion.h1
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.25, ease: [0.22, 1, 0.36, 1] }}
-            className="font-serif text-sandalwood text-4xl sm:text-5xl lg:text-6xl leading-[1.05] font-medium max-w-3xl"
+            transition={{ duration: 0.8, delay: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="font-serif text-alabaster text-5xl sm:text-6xl lg:text-8xl leading-[1.05] font-light max-w-4xl"
             data-testid="hero-heading"
           >
             Save a little daily.
@@ -203,7 +205,7 @@ export default function Landing() {
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.4 }}
-            className="text-sandalwood/85 text-base md:text-lg leading-8 mt-7 max-w-xl"
+            className="text-alabaster/70 text-lg md:text-xl leading-relaxed mt-8 max-w-2xl font-light"
           >
             A Daily Kudam that turns ₹5 a day into feast-day discounts, and a Fresh Catch
             market to pre-book seafood straight off the dawn boats of Tamil Nadu.
@@ -212,18 +214,17 @@ export default function Landing() {
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.55 }}
-            className="mt-10 flex flex-col sm:flex-row gap-4"
+            className="mt-12 flex flex-col sm:flex-row gap-4"
           >
             <button
-              className="btn-henna !bg-gold !text-henna sm:min-w-[240px] font-semibold"
+              className="btn-gold-outline !border-gold/30 !text-gold hover:!bg-gold hover:!text-obsidian sm:min-w-[240px]"
               onClick={() => navigate(user ? "/dashboard" : "/register")}
               data-testid="begin-kudam-btn"
             >
               Begin Your Kudam
             </button>
             <button
-              className="sm:min-w-[240px] border border-sandalwood/60 text-sandalwood py-3.5 px-6 text-xs uppercase hover:bg-sandalwood/10 transition-colors duration-300"
-              style={{ letterSpacing: "0.18em" }}
+              className="btn-obsidian !bg-transparent !border-alabaster/30 !text-alabaster hover:!bg-alabaster hover:!text-obsidian sm:min-w-[240px]"
               onClick={() => navigate("/market")}
               data-testid="view-catch-btn"
             >
@@ -240,49 +241,49 @@ export default function Landing() {
       <Journey />
 
       {/* Two paths */}
-      <section className="max-w-[1600px] mx-auto px-4 md:px-8 lg:px-16 pb-12 lg:pb-20">
-        <motion.h2 {...fadeUp} className="font-serif text-henna text-3xl md:text-4xl font-medium mb-10">
+      <section className="max-w-[1600px] mx-auto px-4 md:px-8 lg:px-16 pb-20 lg:pb-32">
+        <motion.h2 {...fadeUp} className="font-serif text-obsidian text-4xl md:text-5xl lg:text-6xl font-medium mb-16 text-center max-w-2xl mx-auto leading-[1.1]">
           Two paths, one table.
         </motion.h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-10">
-          <motion.div {...fadeUp} className="card-white p-8 lg:p-12">
-            <p className="text-gold-dim text-[10px] uppercase mb-3" style={{ letterSpacing: "0.4em" }}>Path A · Habit</p>
-            <h3 className="font-serif text-henna text-2xl lg:text-3xl font-medium">The Daily Kudam</h3>
-            <p className="text-henna/80 text-sm leading-7 mt-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12">
+          <motion.div {...fadeUp} className="card-white p-10 lg:p-16 flex flex-col items-start group">
+            <p className="text-gold-dim text-[10px] uppercase mb-4 tracking-[0.4em]">Path A · Habit</p>
+            <h3 className="font-serif text-obsidian text-3xl lg:text-4xl font-medium">The Daily Kudam</h3>
+            <p className="text-obsidian/60 text-base leading-relaxed mt-5">
               Save ₹1, ₹5 or ₹10 every day. When your kudam fills, you unlock a
               20% discount and a family hamper on your next fresh catch order.
             </p>
-            <div className="mt-6 flex justify-center md:justify-start">
-              <SavingsMandala progress={0.66} size={170} />
+            <div className="mt-10 flex justify-center w-full transform group-hover:scale-105 transition-transform duration-700 ease-[0.16,1,0.3,1]">
+              <SavingsMandala progress={0.66} size={200} />
             </div>
-            <button className="btn-henna mt-8 w-full sm:w-auto" onClick={() => navigate(user ? "/dashboard" : "/register")} data-testid="path-savings-btn">
+            <button className="btn-obsidian mt-12 w-full sm:w-auto" onClick={() => navigate(user ? "/dashboard" : "/register")} data-testid="path-savings-btn">
               Start Saving
             </button>
           </motion.div>
-          <motion.div {...fadeUp} className="card-white p-8 lg:p-12 flex flex-col">
-            <p className="text-gold-dim text-[10px] uppercase mb-3" style={{ letterSpacing: "0.4em" }}>Path B · Today</p>
-            <h3 className="font-serif text-henna text-2xl lg:text-3xl font-medium">The Fresh Catch</h3>
-            <p className="text-henna/80 text-sm leading-7 mt-4">
+          <motion.div {...fadeUp} className="card-white p-10 lg:p-16 flex flex-col items-start group">
+            <p className="text-gold-dim text-[10px] uppercase mb-4 tracking-[0.4em]">Path B · Today</p>
+            <h3 className="font-serif text-obsidian text-3xl lg:text-4xl font-medium">The Fresh Catch</h3>
+            <p className="text-obsidian/60 text-base leading-relaxed mt-5">
               Pre-book Vanjaram, Iral and Vaaval for 6 AM delivery — standard
               market rates, or your Kudam discount if the vessel is full.
             </p>
-            <div className="mt-6 overflow-hidden border border-gold/25 flex-1 max-h-52">
-              <img src={CATCH_ICE} alt="Fresh catch on ice" className="w-full h-full object-cover" loading="lazy" />
+            <div className="mt-10 overflow-hidden border-[0.5px] border-obsidian/10 w-full flex-1 min-h-[200px]">
+              <img src={CATCH_ICE} alt="Fresh catch on ice" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-700 ease-[0.16,1,0.3,1]" loading="lazy" />
             </div>
-            <button className="btn-gold-outline mt-8 w-full sm:w-auto" onClick={() => navigate("/market")} data-testid="path-market-btn">
+            <button className="btn-gold-outline mt-12 w-full sm:w-auto" onClick={() => navigate("/market")} data-testid="path-market-btn">
               Browse the Catch
             </button>
           </motion.div>
         </div>
       </section>
 
-      <footer className="max-w-[1600px] mx-auto px-4 md:px-8 lg:px-16 pt-6 pb-10 text-center">
-        <div className="gold-rule mb-6" />
-        <p className="tamil text-gold-dim text-sm">கடல் தரும், குடம் காக்கும்</p>
-        <p className="text-henna/40 text-[9px] uppercase mt-2" style={{ letterSpacing: "0.35em" }}>
+      <div className="max-w-[1600px] mx-auto px-4 md:px-8 lg:px-16 pb-20 text-center">
+        <div className="gold-rule mb-8 max-w-xs mx-auto" />
+        <p className="tamil text-gold text-base md:text-lg">கடல் தரும், குடம் காக்கும்</p>
+        <p className="text-obsidian/40 text-[9px] uppercase mt-3 tracking-[0.4em]">
           The sea provides, the kudam protects
         </p>
-      </footer>
+      </div>
     </div>
   );
 }

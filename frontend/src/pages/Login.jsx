@@ -47,7 +47,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-sandalwood-paper paper-texture flex flex-col items-center justify-center px-6" data-testid="login-page">
+    <div className="min-h-screen bg-alabaster-paper paper-texture flex flex-col items-center justify-center px-6" data-testid="login-page">
       <motion.div
         className="w-full max-w-sm"
         initial={{ opacity: 0, y: 20 }}
@@ -56,8 +56,8 @@ export default function Login() {
       >
         <div className="flex flex-col items-center mb-10">
           <FiligreeLogo />
-          <h1 className="font-serif text-henna text-3xl font-medium mt-4">Welcome back</h1>
-          <p className="text-henna/70 text-sm mt-2">Your kudam has been waiting.</p>
+          <h1 className="font-serif text-obsidian text-3xl font-medium mt-4">Welcome back</h1>
+          <p className="text-obsidian/70 text-sm mt-2">Your kudam has been waiting.</p>
         </div>
 
         <form onSubmit={(e) => { e.preventDefault(); haptic(); doLogin(email, password); }} className="space-y-6">
@@ -82,15 +82,15 @@ export default function Login() {
             />
             <button
               type="button"
-              className="absolute right-1 top-1/2 -translate-y-1/2 text-henna/60 p-2"
+              className="absolute right-1 top-1/2 -translate-y-1/2 text-obsidian/60 p-2"
               onClick={() => setShowPw((s) => !s)}
               data-testid="password-toggle-btn"
             >
               {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
-          {error && <p className="text-henna text-sm italic font-serif" data-testid="login-error">{error}</p>}
-          <button className="btn-henna w-full" disabled={busy} data-testid="login-submit-btn">
+          {error && <p className="text-obsidian text-sm italic font-serif" data-testid="login-error">{error}</p>}
+          <button className="btn-obsidian w-full" disabled={busy} data-testid="login-submit-btn">
             {busy ? "Opening…" : "Enter"}
           </button>
         </form>
@@ -99,7 +99,7 @@ export default function Login() {
 
         <div className="space-y-3">
           <button
-            className="w-full flex items-center justify-center gap-2 border border-gold/60 bg-white py-3.5 text-henna text-xs uppercase hover:bg-gold/10 transition-colors duration-300"
+            className="w-full flex items-center justify-center gap-2 border border-gold/60 bg-white py-3.5 text-obsidian text-xs uppercase hover:bg-gold/10 transition-colors duration-300"
             style={{ letterSpacing: "0.18em" }}
             onClick={() => fillDemo("demo@meenamma.in", "meenamma2026")}
             data-testid="demo-user-btn"
@@ -107,19 +107,19 @@ export default function Login() {
             <Sparkles size={14} className="text-gold" /> Try the Meenamma Experience (Demo)
           </button>
           <button
-            className="w-full flex items-center justify-center gap-2 border border-gold/60 bg-white py-3.5 text-henna text-xs uppercase hover:bg-gold/10 transition-colors duration-300"
+            className="w-full flex items-center justify-center gap-2 border border-gold/60 bg-white py-3.5 text-obsidian text-xs uppercase hover:bg-gold/10 transition-colors duration-300"
             style={{ letterSpacing: "0.18em" }}
             onClick={() => fillDemo("admin@meenamma.in", "TempleGold@2026")}
             data-testid="demo-admin-btn"
           >
             <Crown size={14} className="text-gold" /> Enter as Store Admin (Demo)
           </button>
-          <p className="text-henna/60 text-[11px] text-center">Taps pre-fill the credentials — then press Enter.</p>
+          <p className="text-obsidian/60 text-[11px] text-center">Taps pre-fill the credentials — then press Enter.</p>
         </div>
 
-        <p className="text-henna/70 text-sm mt-8 text-center">
+        <p className="text-obsidian/70 text-sm mt-8 text-center">
           New here?{" "}
-          <Link to="/register" className="text-henna font-medium underline underline-offset-4 decoration-gold" data-testid="goto-register-link">
+          <Link to="/register" className="text-obsidian font-medium underline underline-offset-4 decoration-gold" data-testid="goto-register-link">
             Begin your Kudam
           </Link>
         </p>
