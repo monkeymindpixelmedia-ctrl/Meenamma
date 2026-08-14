@@ -7,7 +7,31 @@ import re
 import uuid
 from supabase import create_client
 
-sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+from supertokens_python import init, InputAppInfo, SupertokensConfig
+from supertokens_python.recipe import emailpassword, session
+from supertokens_python.recipe.emailpassword.syncio import sign_up
+from supertokens_python.recipe.emailpassword.interfaces import SignUpOkResult
+
+sb = create_client(os.environ.get("SUPABASE_URL", os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "")), os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+
+init(
+    app_info=InputAppInfo(
+        app_name="Meenamma",
+        api_domain=os.environ.get("NEXT_PUBLIC_BACKEND_URL", "http://localhost:8000"),
+        website_domain=os.environ.get("NEXT_PUBLIC_APP_URL", "http://localhost:3000"),
+        api_base_path="/auth",
+        website_base_path="/auth"
+    ),
+    supertokens_config=SupertokensConfig(
+        connection_uri=os.environ.get("SUPERTOKENS_CONNECTION_URI", ""),
+        api_key=os.environ.get("SUPERTOKENS_API_KEY")
+    ),
+    framework='fastapi',
+    recipe_list=[
+        session.init(),
+        emailpassword.init()
+    ]
+)
 
 IMG = "https://static.prod-images.emergentagent.com/jobs/950ac656-d06c-4ab1-9af2-57dae3ef9785/images"
 
@@ -82,12 +106,15 @@ def slugify(s):
 def ensure_user(email, password, name):
     rows = sb.table("profiles").select("id").eq("email", email).execute().data
     if rows:
-        uid = rows[0]["id"]
-        sb.auth.admin.update_user_by_id(uid, {"password": password})
+        return rows[0]["id"]
+
+    res = sign_up("public", email, password)
+    if isinstance(res, SignUpOkResult):
+        uid = res.user.recipe_user_id.get_as_string()
+        sb.table("profiles").insert({"id": uid, "email": email, "display_name": name}).execute()
         return uid
-    res = sb.auth.admin.create_user({"email": email, "password": password,
-                                     "email_confirm": True, "user_metadata": {"name": name}})
-    return res.user.id
+    else:
+        raise Exception(f"Failed to create user {email}: {res}")
 
 
 def main():

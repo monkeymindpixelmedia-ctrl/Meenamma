@@ -1,0 +1,19 @@
+{
+  "project": "meenamma",
+  "environment": {
+    "test_command": "$env:REACT_APP_BACKEND_URL='http://localhost:8000'; python -m pytest api/tests"
+  },
+  "order": ["T1"],
+  "tasks": {
+    "T1": {
+      "id": "T1",
+      "title": "Migrate seed.py to SuperTokens",
+      "description": "Refactor api/seed.py so that it creates the admin and demo users in SuperTokens using the emailpassword recipe instead of Supabase Auth. After creating the SuperTokens user, it should also upsert their profile into the Supabase profiles table to maintain relational integrity.",
+      "acceptance_criteria": [
+        "seed.py successfully executes without errors",
+        "admin@meenamma.in and demo@meenamma.in can be authenticated locally"
+      ],
+      "depends_on": []
+    }
+  }
+}

@@ -2,6 +2,7 @@ import React from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { Crown, LogOut } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { motion } from "framer-motion";
 
 const links = [
   { to: "/home", label: "Home" },
@@ -19,13 +20,23 @@ export default function Header() {
   };
 
   return (
-    <header className="glass-paper sticky top-0 z-40 transition-all duration-500" data-testid="top-header">
+    <motion.header 
+      initial={{ y: -100 }}
+      animate={{ y: 0 }}
+      transition={{ type: "spring", stiffness: 100, damping: 20 }}
+      className="glass-paper sticky top-0 z-40 transition-all duration-500" data-testid="top-header"
+    >
       <div className="max-w-[1600px] mx-auto px-4 md:px-8 lg:px-16 h-20 flex items-center justify-between">
-        <button onClick={() => navigate("/home")} className="flex items-baseline gap-2 group" data-testid="header-logo">
-          <span className="font-serif text-obsidian text-2xl font-light tracking-[0.25em] group-hover:opacity-60 transition-opacity duration-500">
+        <motion.button 
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => navigate("/home")} 
+          className="flex items-baseline gap-2 group" data-testid="header-logo"
+        >
+          <span className="font-serif text-obsidian text-2xl font-light tracking-[0.25em] group-hover:opacity-70 transition-opacity duration-300">
             MEENAMMA
           </span>
-        </button>
+        </motion.button>
 
         <nav className="hidden md:flex items-center gap-12">
           {links.map((l) => (
@@ -74,6 +85,6 @@ export default function Header() {
           )}
         </div>
       </div>
-    </header>
+    </motion.header>
   );
 }

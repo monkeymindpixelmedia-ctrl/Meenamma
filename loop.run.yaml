@@ -1,0 +1,11 @@
+prompt: "Update api/seed.py to create the local admin (admin@meenamma.in) and demo user (demo@meenamma.in) in SuperTokens instead of Supabase Auth, because local admin login is not working after the SuperTokens migration."
+repo: "."
+tasks_file: "./sandbox/tasks.json"
+test_command: "python -m pytest api/tests"
+sandbox_root: "./sandbox"
+iter_strategy: "branches"
+pr_mode: "none"
+base_branch: "swe/20260814"
+task_budget: 6
+patience: 2
+quality_thresholds: "8 / 100 / 60 / 4 / 400"

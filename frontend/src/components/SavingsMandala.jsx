@@ -22,9 +22,9 @@ export const SavingsMandala = ({ progress, size = 288 }) => {
             transform={`rotate(${i * 30}, 150, 150)`}
             d="M 150 10 Q 165 25 150 40 Q 135 25 150 10"
             fill="none"
-            stroke="#C5A059"
-            strokeWidth="1.5"
-            opacity="0.85"
+            stroke="#D4AF37"
+            strokeWidth="0.5"
+            opacity="0.5"
           />
         ))}
         {[...Array(24)].map((_, i) => (
@@ -32,15 +32,15 @@ export const SavingsMandala = ({ progress, size = 288 }) => {
             key={`d${i}`}
             cx={150 + 138 * Math.cos((i * 15 * Math.PI) / 180)}
             cy={150 + 138 * Math.sin((i * 15 * Math.PI) / 180)}
-            r="1.2"
-            fill="#C5A059"
-            opacity="0.6"
+            r="0.8"
+            fill="#D4AF37"
+            opacity="0.4"
           />
         ))}
       </motion.svg>
 
       <div
-        className="rounded-full border-4 border-gold overflow-hidden relative bg-white"
+        className="rounded-full border border-gold/20 overflow-hidden relative bg-transparent backdrop-blur-sm"
         style={{ width: size * 0.78, height: size * 0.78 }}
       >
         <motion.div
@@ -49,17 +49,17 @@ export const SavingsMandala = ({ progress, size = 288 }) => {
           transition={{ duration: 1.4, ease: [0.22, 1, 0.36, 1] }}
           className="absolute bottom-0 w-full"
           style={{
-            background: "linear-gradient(to top, #C5A059, rgba(197,160,89,0.35))",
+            background: "linear-gradient(to top, rgba(212,175,55,0.8), rgba(212,175,55,0.1))",
           }}
         >
           <motion.div
             className="absolute -top-2 left-0 w-[200%] h-4"
             animate={{ x: ["-50%", "0%"] }}
-            transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+            transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
             style={{
               willChange: "transform",
               background:
-                "radial-gradient(ellipse 30px 8px at 25% 50%, rgba(229,193,122,0.95) 40%, transparent 70%), radial-gradient(ellipse 30px 8px at 75% 50%, rgba(229,193,122,0.95) 40%, transparent 70%)",
+                "radial-gradient(ellipse 30px 4px at 25% 50%, rgba(212,175,55,0.6) 40%, transparent 70%), radial-gradient(ellipse 30px 4px at 75% 50%, rgba(212,175,55,0.6) 40%, transparent 70%)",
               backgroundSize: "50% 100%",
             }}
           />

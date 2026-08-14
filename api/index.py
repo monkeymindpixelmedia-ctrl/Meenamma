@@ -14,7 +14,6 @@ from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, UploadF
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from jwt import PyJWKClient
-import resend
 from pydantic import BaseModel, Field
 from supabase import create_client
 from api.notify import drain_notification_outbox, queue_notification
@@ -32,7 +31,6 @@ JWKS = PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json", cache_keys=T
 ISSUER = f"{SUPABASE_URL}/auth/v1"
 
 rzp = razorpay.Client(auth=(os.environ.get("RAZORPAY_KEY_ID", ""), os.environ.get("RAZORPAY_KEY_SECRET", "")))
-resend.api_key = os.environ.get("RESEND_API_KEY", "re_dummy_value")
 
 app = FastAPI(title="Meenamma API")
 api = APIRouter(prefix="/api")
@@ -689,42 +687,29 @@ def reservation_complete_order(reservation_id: str, body: ReservationCompleteIn,
 
 
 def queue_order_notification(order: dict, event_key: str, user: Optional[dict] = None):
-    """Send an order event notification using Resend."""
+    """Queue an outbox row for an order event and best-effort drain it."""
     prof = order.get("profiles") or user or {}
     items = order.get("order_items") or []
     it = items[0] if items else {}
     snap = it.get("item_snapshot") or {}
     slot = order.get("delivery_slot_snapshot") or {}
-    
-    email = prof.get("email")
-    if not email:
-        return
-        
-    name = prof.get("display_name") or prof.get("name") or "Valued Customer"
-    product_name = snap.get("name") or "Your Catch"
-    amount = round((order.get("total_paise") or 0) / 100)
-    ref = order.get("public_reference") or order.get("id") or ""
-    
-    html_content = f"""
-    <div style='font-family: "Cormorant Garamond", serif; padding: 40px; text-align: center;'>
-        <h1 style='color: #1a1a1a; letter-spacing: 0.1em; text-transform: uppercase;'>The Ritual of the Sea</h1>
-        <p style='color: #4a4a4a; font-size: 16px; margin-top: 20px;'>Dear {name},</p>
-        <p style='color: #4a4a4a; font-size: 16px;'>Your order <strong>#{ref}</strong> for {product_name} is confirmed.</p>
-        <p style='color: #4a4a4a; font-size: 16px;'>Amount Paid: ₹{amount}</p>
-        <p style='color: #4a4a4a; font-size: 16px; margin-top: 20px;'>We will prepare your catch carefully.</p>
-    </div>
-    """
-    
-    try:
-        import resend
-        resend.Emails.send({
-            "from": "Meenamma <onboarding@resend.dev>",
-            "to": email,
-            "subject": f"Order Confirmed: {product_name}",
-            "html": html_content
-        })
-    except Exception as e:
-        print("Failed to send order notification via Resend", e)
+    payload = {
+        "email": prof.get("email") or "",
+        "name": prof.get("display_name") or prof.get("name") or "",
+        "product": snap.get("name") or "",
+        "reference": order.get("public_reference") or "",
+        "amount": round((order.get("total_paise") or 0) / 100),
+        "date": slot.get("delivery_date") or "",
+        "slot": slot.get("window") or "6:00 AM",
+    }
+    if queue_notification(sb, aggregate_type="order", aggregate_id=order["id"],
+                          event_key=event_key,
+                          idempotency_key=f"booking:{order['id']}:{event_key}",
+                          payload=payload):
+        try:
+            drain_notification_outbox(sb)
+        except Exception:
+            pass
 
 
 def notify_catch_arrived(prod: dict):

@@ -48,31 +48,31 @@ function LiveDashboard({ stats }) {
     : [];
   return (
     <motion.section {...fadeUp} className="max-w-[1600px] mx-auto px-4 md:px-8 lg:px-16 -mt-14 lg:-mt-20 relative z-10" data-testid="live-catch-dashboard">
-      <div className="bg-obsidian text-alabaster shadow-2xl border border-obsidian-light/30">
+      <div className="glass-paper shadow-2xl border border-obsidian/10 rounded-sm">
         <div className="flex items-center gap-3 px-6 lg:px-10 pt-6">
           <motion.span
             className="w-2 h-2 rounded-full bg-gold"
             animate={{ opacity: [1, 0.3, 1], scale: [1, 1.4, 1] }}
             transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
           />
-          <p className="text-gold text-[10px] uppercase tracking-[0.45em]">
+          <p className="text-obsidian/60 text-[10px] uppercase tracking-[0.45em]">
             The Live Ledger · counted from the harbour
           </p>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 divide-x divide-y lg:divide-y-0 divide-alabaster/10 mt-4 border-t border-alabaster/10">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 divide-x divide-y lg:divide-y-0 divide-obsidian/10 mt-4 border-t border-obsidian/10">
           {stats === null
             ? [...Array(6)].map((_, i) => (
                 <div key={i} className="px-6 py-7">
-                  <div className="h-8 w-16 bg-alabaster/5 animate-pulse" />
-                  <div className="h-2 w-24 bg-alabaster/5 animate-pulse mt-3" />
+                  <div className="h-8 w-16 bg-obsidian/5 animate-pulse" />
+                  <div className="h-2 w-24 bg-obsidian/5 animate-pulse mt-3" />
                 </div>
               ))
             : cells.map((c) => (
                 <div key={c.label} className="px-5 lg:px-6 py-7" data-testid={c.testid}>
-                  <p className="num-lg text-gold text-2xl lg:text-3xl">
+                  <p className="num-lg text-obsidian text-2xl lg:text-3xl">
                     <CountUp value={c.value} prefix={c.prefix || ""} />
                   </p>
-                  <p className="text-alabaster/50 text-[9px] uppercase mt-2 leading-4 tracking-[0.25em]">
+                  <p className="text-obsidian/50 text-[9px] uppercase mt-2 leading-4 tracking-[0.25em]">
                     {c.label}
                   </p>
                 </div>

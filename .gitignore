@@ -10,3 +10,7 @@ node_modules
 dist
 .vercel
 .env*
+
+# Python bytecode
+__pycache__/
+*.pyc
