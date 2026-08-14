@@ -5,6 +5,10 @@
     {
       "path": "/api/cron/autopay/daily",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/autopay/charge",
+      "schedule": "0 * * * *"
     }
   ],
   "rewrites": [
