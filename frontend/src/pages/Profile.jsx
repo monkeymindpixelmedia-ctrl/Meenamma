@@ -14,8 +14,22 @@ export default function Profile() {
   const [plan, setPlan] = useState(user?.daily_plan || 5);
   const [pincode, setPincode] = useState(user?.pincode || "");
   const [upi, setUpi] = useState(user?.upi_id || "");
+  const [locale, setLocale] = useState(user?.locale || "en");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const setLang = async (lang) => {
+    haptic();
+    setLocale(lang);
+    setMsg("");
+    try {
+      const { data } = await api.patch("/me", { locale: lang });
+      updateUser(data);
+      setMsg(lang === "ta" ? "மொழி மாற்றப்பட்டது." : "Language set to English.");
+    } catch (err) {
+      setMsg(formatApiErrorDetail(err.response?.data?.detail) || err.message);
+    }
+  };
 
   const save = async (e) => {
     e.preventDefault();
@@ -92,6 +106,25 @@ export default function Profile() {
           <div>
             <label className="text-obsidian/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>UPI ID</label>
             <input className="input-minimal" value={upi} onChange={(e) => setUpi(e.target.value)} placeholder="yourname@upi" data-testid="profile-upi-input" />
+          </div>
+          <div>
+            <label className="text-obsidian/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>Language</label>
+            <div className="flex gap-3 mt-3">
+              {[["en", "English"], ["ta", "தமிழ்"]].map(([code, label]) => (
+                <button
+                  type="button"
+                  key={code}
+                  onClick={() => setLang(code)}
+                  data-testid={`profile-lang-${code}`}
+                  className={`flex-1 py-3 border transition-all duration-300 ${
+                    locale === code ? "border-gold bg-alabaster/70 shadow-[0_0_0_1px_#C5A059]" : "border-gold/30 bg-white"
+                  }`}
+                >
+                  <span className={`text-obsidian text-sm ${code === "ta" ? "tamil" : "font-serif"}`}>{label}</span>
+                  <span className="text-obsidian/60 text-[10px] block mt-0.5">{code === "ta" ? "தமிழ்" : "English"}</span>
+                </button>
+              ))}
+            </div>
           </div>
           {msg && <p className="text-obsidian text-sm italic font-serif" data-testid="profile-msg">{msg}</p>}
           <button className="btn-obsidian w-full" disabled={busy} data-testid="profile-save-btn">

@@ -26,9 +26,11 @@ export default function Market() {
   const [receipt, setReceipt] = useState(null);
   const [provenance, setProvenance] = useState(null);
 
+  const lang = user?.locale === "ta" ? "ta" : "en";
+
   useEffect(() => {
-    api.get("/products").then(({ data }) => setProducts(data));
-  }, []);
+    api.get(`/products?lang=${lang}`).then(({ data }) => setProducts(data));
+  }, [lang]);
 
   useEffect(() => {
     if (user) api.get("/rewards/status").then(({ data }) => setReward(data)).catch(() => {});

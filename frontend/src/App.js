@@ -1,6 +1,23 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import SuperTokens, { SuperTokensWrapper } from "supertokens-auth-react";
+import EmailPassword from "supertokens-auth-react/recipe/emailpassword";
+import Session from "supertokens-auth-react/recipe/session";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+
+SuperTokens.init({
+    appInfo: {
+        appName: process.env.REACT_APP_SUPERTOKENS_APP_NAME || "Meenamma",
+        apiDomain: process.env.REACT_APP_SUPERTOKENS_API_DOMAIN || "http://localhost:8000",
+        websiteDomain: process.env.REACT_APP_SUPERTOKENS_WEBSITE_DOMAIN || "http://localhost:3000",
+        apiBasePath: "/api/auth",
+        websiteBasePath: "/auth"
+    },
+    recipeList: [
+        EmailPassword.init(),
+        Session.init()
+    ]
+});
 import BottomNav from "./components/BottomNav";
 import Header from "./components/Header";
 import Splash from "./pages/Splash";
@@ -86,10 +103,12 @@ function Shell() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Shell />
-      </BrowserRouter>
-    </AuthProvider>
+    <SuperTokensWrapper>
+      <AuthProvider>
+        <BrowserRouter>
+          <Shell />
+        </BrowserRouter>
+      </AuthProvider>
+    </SuperTokensWrapper>
   );
 }

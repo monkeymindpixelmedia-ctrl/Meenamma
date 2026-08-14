@@ -6,3 +6,4 @@ pydantic==2.13.4
 supabase==2.31.0
 uvicorn==0.25.0
 python-multipart==0.0.32
+resend>=0.7.0

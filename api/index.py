@@ -13,22 +13,14 @@ from typing import Optional
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-
-from supertokens_python import init, InputAppInfo, SupertokensConfig
-from supertokens_python.recipe import emailpassword, session
-from supertokens_python.recipe.emailpassword.interfaces import APIInterface
-from supertokens_python.framework.fastapi import get_middleware
-from supertokens_python.recipe.session.framework.fastapi import verify_session
-from supertokens_python.recipe.session import SessionContainer
-from supertokens_python.recipe.emailpassword.types import EmailDeliveryOverrideInput, EmailTemplateVars
-from supertokens_python.ingredients.emaildelivery.types import EmailDeliveryConfig
+from jwt import PyJWKClient
 import resend
 from pydantic import BaseModel, Field
 from supabase import create_client
 from api.notify import drain_notification_outbox, queue_notification
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-sb = create_client(SUPABASE_URL, os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+SUPABASE_URL = os.environ.get("SUPABASE_URL", os.environ.get("NEXT_PUBLIC_SUPABASE_URL"))
+sb = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
 import httpx as _httpx
 _old = sb.postgrest.session
 sb.postgrest.session = _httpx.Client(
@@ -36,79 +28,13 @@ sb.postgrest.session = _httpx.Client(
     limits=_httpx.Limits(max_connections=20, max_keepalive_connections=10, keepalive_expiry=15),
     transport=_httpx.HTTPTransport(retries=2),
 )
-JWKS = None
-ISSUER = ""
+JWKS = PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json", cache_keys=True)
+ISSUER = f"{SUPABASE_URL}/auth/v1"
 
 rzp = razorpay.Client(auth=(os.environ.get("RAZORPAY_KEY_ID", ""), os.environ.get("RAZORPAY_KEY_SECRET", "")))
 resend.api_key = os.environ.get("RESEND_API_KEY", "re_dummy_value")
 
-def custom_email_deliver(original_implementation: EmailDeliveryOverrideInput) -> EmailDeliveryOverrideInput:
-    original_send_email = original_implementation.send_email
-    async def send_email(template_vars: EmailTemplateVars, user_context: dict):
-        try:
-            resend.Emails.send({
-                "from": "Meenamma <onboarding@resend.dev>",
-                "to": template_vars.user.email,
-                "subject": "Welcome to Meenamma - The Ritual of the Sea",
-                "html": "<div style='font-family: \"Cormorant Garamond\", serif; padding: 40px; text-align: center;'><h1 style='color: #1a1a1a; letter-spacing: 0.1em; text-transform: uppercase;'>The Ritual of the Sea</h1><p style='color: #4a4a4a; font-size: 16px; margin-top: 20px;'>You have successfully joined Meenamma. We are honored to serve you.</p></div>"
-            })
-        except Exception as e:
-            print("Resend failed", e)
-        return await original_send_email(template_vars, user_context)
-    original_implementation.send_email = send_email
-    return original_implementation
-
-def override_emailpassword_apis(original_implementation: APIInterface):
-    original_sign_up_post = original_implementation.sign_up_post
-    async def sign_up_post(form_fields, tenant_id, session, api_options, user_context):
-        result = await original_sign_up_post(form_fields, tenant_id, session, api_options, user_context)
-        if result.status == "OK":
-            user = result.user
-            try:
-                sb.table("profiles").insert({
-                    "id": user.id,
-                    "email": user.emails[0],
-                    "display_name": user.emails[0].split('@')[0]
-                }).execute()
-            except Exception as e:
-                print("Failed to sync profile to supabase:", e)
-        return result
-    original_implementation.sign_up_post = sign_up_post
-    return original_implementation
-
-init(
-    app_info=InputAppInfo(
-        app_name="Meenamma",
-        api_domain="http://localhost:8000",
-        website_domain="http://localhost:3000",
-        api_base_path="/api/auth",
-        website_base_path="/auth"
-    ),
-    supertokens_config=SupertokensConfig(
-        connection_uri=os.environ.get("SUPERTOKENS_CONNECTION_URI", "https://try.supertokens.com"),
-        api_key=os.environ.get("SUPERTOKENS_API_KEY")
-    ),
-    framework='fastapi',
-    recipe_list=[
-        session.init(),
-        emailpassword.init(
-            email_delivery=EmailDeliveryConfig(override=custom_email_deliver),
-            override=emailpassword.InputOverrideConfig(apis=override_emailpassword_apis)
-        )
-    ],
-    mode='asgi'
-)
-
 app = FastAPI(title="Meenamma API")
-app.add_middleware(get_middleware())
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["GET", "PUT", "POST", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["Content-Type", "supertokens-namespace"] + getattr(supertokens_python.framework.fastapi, 'get_cors_allowed_headers', lambda: ["fdi-version", "anti-csrf", "rid", "st-auth-mode"])() if hasattr(supertokens_python, 'framework') else ["Content-Type"]
-)
-
 api = APIRouter(prefix="/api")
 
 
@@ -121,11 +47,29 @@ def slugify(s: str) -> str:
 
 
 # ---------- Auth ----------
-def get_current_user(st_session: SessionContainer = Depends(verify_session())):
-    user_id = st_session.get_user_id()
+def decode_token(token: str) -> dict:
+    header = pyjwt.get_unverified_header(token)
+    if header.get("alg") == "HS256":
+        res = sb.auth.get_user(token)
+        if not res or not res.user:
+            raise pyjwt.InvalidTokenError("invalid session")
+        return {"sub": res.user.id, "email": res.user.email}
+    key = JWKS.get_signing_key_from_jwt(token)
+    return pyjwt.decode(token, key.key, algorithms=["ES256", "RS256"],
+                        audience="authenticated", issuer=ISSUER)
+
+
+def get_current_user(request: Request) -> dict:
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        claims = decode_token(auth[7:])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
     rows = (sb.table("profiles")
             .select("*, staff_role_assignments!profile_id(role, revoked_at)")
-            .eq("id", user_id).execute().data)
+            .eq("id", claims["sub"]).execute().data)
     if not rows:
         raise HTTPException(status_code=401, detail="Profile not found")
     p = rows[0]
@@ -144,7 +88,7 @@ def user_public(p: dict) -> dict:
     return {"id": p["id"], "email": p.get("email") or "", "name": p.get("display_name") or "",
             "role": p.get("_role", "user"), "daily_plan": p.get("daily_plan") or 5,
             "pincode": p.get("pincode") or "", "upi_id": p.get("upi_id") or "",
-            "autopay_status": p.get("autopay_status") or "none"}
+            "autopay_status": p.get("autopay_status") or "none", "locale": p.get("locale") or "en"}
 
 
 @api.get("/auth/me")
@@ -157,6 +101,7 @@ class ProfileIn(BaseModel):
     daily_plan: Optional[int] = None
     pincode: Optional[str] = None
     upi_id: Optional[str] = None
+    locale: Optional[str] = None
 
 
 @api.patch("/me")
@@ -170,6 +115,10 @@ def update_me(body: ProfileIn, user: dict = Depends(get_current_user)):
         upd["pincode"] = body.pincode
     if body.upi_id is not None:
         upd["upi_id"] = body.upi_id
+    if body.locale is not None:
+        if body.locale not in ("en", "ta"):
+            raise HTTPException(status_code=400, detail="locale must be 'en' or 'ta'")
+        upd["locale"] = body.locale
     if upd:
         sb.table("profiles").update(upd).eq("id", user["id"]).execute()
         user = {**user, **upd}
@@ -251,21 +200,41 @@ def rewards_status(user: dict = Depends(get_current_user)):
 
 
 # ---------- Products ----------
-def product_out(d: dict) -> dict:
-    disp = d.get("display_en") or {}
+def product_display(prod: dict, lang: str = "en") -> dict:
+    """Locale-aware display fields. Tamil name lives in display_en.tamil_name
+    for seeded products, with display_ta as the (optional) richer Tamil block."""
+    en = prod.get("display_en") or {}
+    ta = prod.get("display_ta") or {}
+    if lang == "ta":
+        return {"name": ta.get("name") or en.get("tamil_name") or en.get("name", ""),
+                "tamil_name": en.get("name", ""),
+                "origin": ta.get("origin") or en.get("origin", ""),
+                "story": ta.get("story") or en.get("story", ""),
+                "handling": ta.get("handling") or en.get("handling", "")}
+    return {"name": en.get("name", ""),
+            "tamil_name": ta.get("name") or en.get("tamil_name", ""),
+            "origin": en.get("origin", ""),
+            "story": en.get("story", ""),
+            "handling": en.get("handling", "")}
+
+
+def product_out(d: dict, lang: str = "en") -> dict:
+    disp = product_display(d, lang)
     media = d.get("media") or []
-    return {"id": d["id"], "name": disp.get("name", ""), "tamil_name": disp.get("tamil_name", ""),
+    return {"id": d["id"], "name": disp["name"], "tamil_name": disp["tamil_name"],
             "price_per_kg": round(d["base_price_paise"] / 100),
             "image": media[0].get("url", "") if media else "",
-            "origin": disp.get("origin", ""), "story": disp.get("story", ""),
-            "handling": disp.get("handling", ""), "available": d["status"] == "published"}
+            "origin": disp["origin"], "story": disp["story"],
+            "handling": disp["handling"], "available": d["status"] == "published"}
 
 
 @api.get("/products")
-def list_products():
+def list_products(lang: str = "en"):
+    if lang not in ("en", "ta"):
+        raise HTTPException(status_code=400, detail="lang must be 'en' or 'ta'")
     rows = (sb.table("products").select("*").neq("status", "archived")
             .order("created_at", desc=False).execute().data)
-    return [product_out(d) for d in rows]
+    return [product_out(d, lang) for d in rows]
 
 
 # ---------- Bookings (orders) ----------
@@ -370,7 +339,7 @@ def create_order(body: OrderCreate, user: dict = Depends(get_current_user)):
             rzp_order = rzp.order.create({"amount": amount * 100, "currency": "INR", "payment_capture": 1})
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Razorpay order failed: {e}")
-        disp = prod.get("display_en") or {}
+        disp = product_display(prod, user.get("locale") or "en")
         order = sb.table("orders").insert({
             "public_reference": f"MNM-{uuid.uuid4().hex[:8].upper()}",
             "profile_id": uid, "status": "pending_payment",
@@ -432,7 +401,7 @@ def verify_payment(body: VerifyIn, user: dict = Depends(get_current_user)):
             return {"ok": True, "already_processed": True}
         verify_signature(body)
         prod = r.get("products") or {}
-        disp = prod.get("display_en") or {}
+        disp = product_display(prod, user.get("locale") or "en")
         order = sb.table("orders").insert({
             "public_reference": f"MNM-{uuid.uuid4().hex[:8].upper()}",
             "profile_id": uid, "status": "confirmed",
@@ -720,29 +689,42 @@ def reservation_complete_order(reservation_id: str, body: ReservationCompleteIn,
 
 
 def queue_order_notification(order: dict, event_key: str, user: Optional[dict] = None):
-    """Queue an outbox row for an order event and best-effort drain it."""
+    """Send an order event notification using Resend."""
     prof = order.get("profiles") or user or {}
     items = order.get("order_items") or []
     it = items[0] if items else {}
     snap = it.get("item_snapshot") or {}
     slot = order.get("delivery_slot_snapshot") or {}
-    payload = {
-        "email": prof.get("email") or "",
-        "name": prof.get("display_name") or prof.get("name") or "",
-        "product": snap.get("name") or "",
-        "reference": order.get("public_reference") or "",
-        "amount": round((order.get("total_paise") or 0) / 100),
-        "date": slot.get("delivery_date") or "",
-        "slot": slot.get("window") or "6:00 AM",
-    }
-    if queue_notification(sb, aggregate_type="order", aggregate_id=order["id"],
-                          event_key=event_key,
-                          idempotency_key=f"booking:{order['id']}:{event_key}",
-                          payload=payload):
-        try:
-            drain_notification_outbox(sb)
-        except Exception:
-            pass
+    
+    email = prof.get("email")
+    if not email:
+        return
+        
+    name = prof.get("display_name") or prof.get("name") or "Valued Customer"
+    product_name = snap.get("name") or "Your Catch"
+    amount = round((order.get("total_paise") or 0) / 100)
+    ref = order.get("public_reference") or order.get("id") or ""
+    
+    html_content = f"""
+    <div style='font-family: "Cormorant Garamond", serif; padding: 40px; text-align: center;'>
+        <h1 style='color: #1a1a1a; letter-spacing: 0.1em; text-transform: uppercase;'>The Ritual of the Sea</h1>
+        <p style='color: #4a4a4a; font-size: 16px; margin-top: 20px;'>Dear {name},</p>
+        <p style='color: #4a4a4a; font-size: 16px;'>Your order <strong>#{ref}</strong> for {product_name} is confirmed.</p>
+        <p style='color: #4a4a4a; font-size: 16px;'>Amount Paid: ₹{amount}</p>
+        <p style='color: #4a4a4a; font-size: 16px; margin-top: 20px;'>We will prepare your catch carefully.</p>
+    </div>
+    """
+    
+    try:
+        import resend
+        resend.Emails.send({
+            "from": "Meenamma <onboarding@resend.dev>",
+            "to": email,
+            "subject": f"Order Confirmed: {product_name}",
+            "html": html_content
+        })
+    except Exception as e:
+        print("Failed to send order notification via Resend", e)
 
 
 def notify_catch_arrived(prod: dict):
