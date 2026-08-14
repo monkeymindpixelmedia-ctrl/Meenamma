@@ -729,7 +729,7 @@ def admin_users(admin: dict = Depends(get_admin_user)):
     return out
 
 
-UPLOAD_DIR = "/app/backend/uploads"
+UPLOAD_DIR = "/tmp/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 

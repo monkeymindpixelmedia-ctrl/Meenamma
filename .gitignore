@@ -8,3 +8,5 @@ credentials.json
 node_modules
 .next
 dist
+.vercel
+.env*
