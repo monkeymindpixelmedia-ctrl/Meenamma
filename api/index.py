@@ -3,6 +3,7 @@ load_dotenv()
 
 import os
 import re
+import json
 import uuid
 import hashlib
 import jwt as pyjwt
@@ -429,6 +430,92 @@ def verify_payment(body: VerifyIn, user: dict = Depends(get_current_user)):
     return {"ok": True, "purpose": "booking", "booking": booking_out(order)}
 
 
+# ---------- Razorpay webhook ----------
+def _process_captured_payment(rzp_order_id: str, entity: dict):
+    att = (sb.table("payment_attempts").select("*, orders!inner(*)")
+           .eq("razorpay_order_id", rzp_order_id).execute().data)
+    if not att:
+        return None
+    att = att[0]
+    sb.table("payment_attempts").update({"status": "paid"}).eq("id", att["id"]).execute()
+    sb.table("payments").insert({
+        "payment_attempt_id": att["id"], "order_id": att["order_id"],
+        "provider_payment_id": entity.get("id"), "status": "captured",
+        "amount_paise": entity.get("amount") or att["amount_paise"],
+        "method_summary": {"method": entity.get("method")},
+        "captured_at": now_utc().isoformat(), "provider_payload": entity}).execute()
+    if att["orders"]["status"] == "pending_payment":
+        sb.table("orders").update({"status": "confirmed", "paid_at": now_utc().isoformat(),
+                                   "confirmed_at": now_utc().isoformat()}).eq("id", att["order_id"]).execute()
+        order = (sb.table("orders").select("*, order_items(*), profiles(email, display_name)")
+                 .eq("id", att["order_id"]).execute().data[0])
+        queue_order_notification(order, "booking_confirmed")
+    return att
+
+
+def _process_failed_payment(rzp_order_id: str, entity: dict):
+    att = sb.table("payment_attempts").select("id") \
+        .eq("razorpay_order_id", rzp_order_id).execute().data
+    if not att:
+        return None
+    sb.table("payment_attempts").update({"status": "failed"}).eq("id", att[0]["id"]).execute()
+    return att[0]
+
+
+@api.post("/payments/webhook")
+async def razorpay_webhook(request: Request):
+    secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET")
+    if not secret:
+        raise HTTPException(status_code=503, detail="Webhook not configured")
+    raw = await request.body()
+    signature = request.headers.get("X-Razorpay-Signature", "")
+    try:
+        payload = json.loads(raw or b"{}")
+    except Exception:
+        payload = {}
+    payload_hash = hashlib.sha256(raw).hexdigest()
+    event_id = payload.get("event_id") or ""
+    event_type = payload.get("event") or "unknown"
+    signature_valid = False
+    try:
+        rzp.utility.verify_webhook_signature(raw.decode("utf-8", "replace"), signature, secret)
+        signature_valid = True
+    except Exception:
+        pass
+    account_id = payload.get("account_id") or ""
+    correlation_id = str(uuid.uuid4())
+    if account_id:
+        try:
+            correlation_id = str(uuid.UUID(account_id))
+        except Exception:
+            pass  # Razorpay account ids (acc_...) aren't UUIDs; fall back to ours
+    try:
+        sb.table("payment_webhook_events").insert({
+            "provider": "razorpay", "provider_event_id": event_id or None,
+            "event_type": event_type, "payload_hash": payload_hash,
+            "signature_valid": signature_valid, "raw_payload": payload,
+            "correlation_id": correlation_id,
+        }).execute()
+    except Exception:
+        return {"ok": True, "already_processed": True}
+    if not signature_valid:
+        raise HTTPException(status_code=400, detail="Webhook signature verification failed")
+    entity = (payload.get("payload") or {}).get("payment") or {}
+    entity = entity.get("entity") or {}
+    rzp_order_id = entity.get("order_id") or ""
+    attempt = None
+    if event_type == "payment.captured" and rzp_order_id:
+        attempt = _process_captured_payment(rzp_order_id, entity)
+    elif event_type == "payment.failed" and rzp_order_id:
+        attempt = _process_failed_payment(rzp_order_id, entity)
+    upd = {"processed_at": now_utc().isoformat()}
+    if attempt:
+        upd["payment_attempt_id"] = attempt["id"]
+    sb.table("payment_webhook_events").update(upd) \
+        .eq("payload_hash", payload_hash).eq("provider", "razorpay").execute()
+    return {"ok": True, "processed": event_type in ("payment.captured", "payment.failed")}
+
+
 # ---------- UPI Autopay (Razorpay subscriptions) ----------
 class AutopayVerifyIn(BaseModel):
     razorpay_payment_id: str
@@ -794,6 +881,13 @@ def process_notifications(admin: dict = Depends(get_admin_user)):
 def admin_notifications(admin: dict = Depends(get_admin_user)):
     rows = (sb.table("notification_outbox").select("*")
             .order("created_at", desc=True).limit(50).execute().data)
+    return rows
+
+
+@api.get("/admin/webhooks")
+def admin_webhooks(admin: dict = Depends(get_admin_user)):
+    rows = (sb.table("payment_webhook_events").select("*")
+            .order("received_at", desc=True).limit(50).execute().data)
     return rows
 
 
