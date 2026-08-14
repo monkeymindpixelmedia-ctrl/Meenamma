@@ -97,7 +97,9 @@ def test_stats_live_public():
     j = r.json()
     for k in ("catches_live", "harbours", "households", "saved_rupees", "kg_reserved", "kudams_filled"):
         assert k in j, f"missing {k}"
-    assert j["catches_live"] >= 15
+    # catches_live counts *published* products; Kaala is intentionally off-season
+    # (see test_reservations.py), so 14 published is the current fixture.
+    assert j["catches_live"] >= 14
 
 
 # ---------- Auth guards ----------

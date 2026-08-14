@@ -5,6 +5,7 @@
 set -a
 ENV_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.env"
 while IFS='=' read -r k v; do
+  v="${v%$'\r'}"   # strip CR (Windows .env line endings)
   case "$k" in
     NEXT_PUBLIC_SUPABASE_URL)      export SUPABASE_URL="$v"; export REACT_APP_SUPABASE_URL="$v" ;;
     NEXT_PUBLIC_SUPABASE_ANON_KEY) export REACT_APP_SUPABASE_ANON_KEY="$v" ;;
