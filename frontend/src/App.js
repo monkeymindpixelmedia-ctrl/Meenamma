@@ -11,6 +11,8 @@ import Dashboard from "./pages/Dashboard";
 import Market from "./pages/Market";
 import Admin from "./pages/Admin";
 import Profile from "./pages/Profile";
+import Legal from "./pages/Legal";
+import Footer from "./components/Footer";
 import "./App.css";
 
 function Protected({ children }) {
@@ -37,10 +39,11 @@ function Shell() {
   const location = useLocation();
   const showChrome = NAV_PAGES.includes(location.pathname);
   return (
-    <div className="w-full min-h-screen bg-sandalwood-paper">
+    <div className="w-full min-h-screen bg-sandalwood-paper flex flex-col">
       {showChrome && <Header />}
-      <Routes>
-        <Route path="/" element={<Splash />} />
+      <div className="flex-grow">
+        <Routes>
+          <Route path="/" element={<Splash />} />
         <Route path="/home" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
@@ -71,9 +74,12 @@ function Shell() {
             </Protected>
           }
         />
-        <Route path="*" element={<Navigate to="/home" replace />} />
-      </Routes>
+        <Route path="/legal/:policy" element={<Legal />} />
+          <Route path="*" element={<Navigate to="/home" replace />} />
+        </Routes>
+      </div>
       {showChrome && <BottomNav />}
+      <Footer />
     </div>
   );
 }
