@@ -13,7 +13,16 @@ from typing import Optional
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from jwt import PyJWKClient
+
+from supertokens_python import init, InputAppInfo, SupertokensConfig
+from supertokens_python.recipe import emailpassword, session
+from supertokens_python.recipe.emailpassword.interfaces import APIInterface
+from supertokens_python.framework.fastapi import get_middleware
+from supertokens_python.recipe.session.framework.fastapi import verify_session
+from supertokens_python.recipe.session import SessionContainer
+from supertokens_python.recipe.emailpassword.types import EmailDeliveryOverrideInput, EmailTemplateVars
+from supertokens_python.ingredients.emaildelivery.types import EmailDeliveryConfig
+import resend
 from pydantic import BaseModel, Field
 from supabase import create_client
 from api.notify import drain_notification_outbox, queue_notification
@@ -27,12 +36,79 @@ sb.postgrest.session = _httpx.Client(
     limits=_httpx.Limits(max_connections=20, max_keepalive_connections=10, keepalive_expiry=15),
     transport=_httpx.HTTPTransport(retries=2),
 )
-JWKS = PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json", cache_keys=True)
-ISSUER = f"{SUPABASE_URL}/auth/v1"
+JWKS = None
+ISSUER = ""
 
-rzp = razorpay.Client(auth=(os.environ["RAZORPAY_KEY_ID"], os.environ["RAZORPAY_KEY_SECRET"]))
+rzp = razorpay.Client(auth=(os.environ.get("RAZORPAY_KEY_ID", ""), os.environ.get("RAZORPAY_KEY_SECRET", "")))
+resend.api_key = os.environ.get("RESEND_API_KEY", "re_dummy_value")
+
+def custom_email_deliver(original_implementation: EmailDeliveryOverrideInput) -> EmailDeliveryOverrideInput:
+    original_send_email = original_implementation.send_email
+    async def send_email(template_vars: EmailTemplateVars, user_context: dict):
+        try:
+            resend.Emails.send({
+                "from": "Meenamma <onboarding@resend.dev>",
+                "to": template_vars.user.email,
+                "subject": "Welcome to Meenamma - The Ritual of the Sea",
+                "html": "<div style='font-family: \"Cormorant Garamond\", serif; padding: 40px; text-align: center;'><h1 style='color: #1a1a1a; letter-spacing: 0.1em; text-transform: uppercase;'>The Ritual of the Sea</h1><p style='color: #4a4a4a; font-size: 16px; margin-top: 20px;'>You have successfully joined Meenamma. We are honored to serve you.</p></div>"
+            })
+        except Exception as e:
+            print("Resend failed", e)
+        return await original_send_email(template_vars, user_context)
+    original_implementation.send_email = send_email
+    return original_implementation
+
+def override_emailpassword_apis(original_implementation: APIInterface):
+    original_sign_up_post = original_implementation.sign_up_post
+    async def sign_up_post(form_fields, tenant_id, session, api_options, user_context):
+        result = await original_sign_up_post(form_fields, tenant_id, session, api_options, user_context)
+        if result.status == "OK":
+            user = result.user
+            try:
+                sb.table("profiles").insert({
+                    "id": user.id,
+                    "email": user.emails[0],
+                    "display_name": user.emails[0].split('@')[0]
+                }).execute()
+            except Exception as e:
+                print("Failed to sync profile to supabase:", e)
+        return result
+    original_implementation.sign_up_post = sign_up_post
+    return original_implementation
+
+init(
+    app_info=InputAppInfo(
+        app_name="Meenamma",
+        api_domain="http://localhost:8000",
+        website_domain="http://localhost:3000",
+        api_base_path="/api/auth",
+        website_base_path="/auth"
+    ),
+    supertokens_config=SupertokensConfig(
+        connection_uri=os.environ.get("SUPERTOKENS_CONNECTION_URI", "https://try.supertokens.com"),
+        api_key=os.environ.get("SUPERTOKENS_API_KEY")
+    ),
+    framework='fastapi',
+    recipe_list=[
+        session.init(),
+        emailpassword.init(
+            email_delivery=EmailDeliveryConfig(override=custom_email_deliver),
+            override=emailpassword.InputOverrideConfig(apis=override_emailpassword_apis)
+        )
+    ],
+    mode='asgi'
+)
 
 app = FastAPI(title="Meenamma API")
+app.add_middleware(get_middleware())
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["GET", "PUT", "POST", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Content-Type", "supertokens-namespace"] + getattr(supertokens_python.framework.fastapi, 'get_cors_allowed_headers', lambda: ["fdi-version", "anti-csrf", "rid", "st-auth-mode"])() if hasattr(supertokens_python, 'framework') else ["Content-Type"]
+)
+
 api = APIRouter(prefix="/api")
 
 
@@ -45,29 +121,11 @@ def slugify(s: str) -> str:
 
 
 # ---------- Auth ----------
-def decode_token(token: str) -> dict:
-    header = pyjwt.get_unverified_header(token)
-    if header.get("alg") == "HS256":
-        res = sb.auth.get_user(token)
-        if not res or not res.user:
-            raise pyjwt.InvalidTokenError("invalid session")
-        return {"sub": res.user.id, "email": res.user.email}
-    key = JWKS.get_signing_key_from_jwt(token)
-    return pyjwt.decode(token, key.key, algorithms=["ES256", "RS256"],
-                        audience="authenticated", issuer=ISSUER)
-
-
-def get_current_user(request: Request) -> dict:
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    try:
-        claims = decode_token(auth[7:])
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
+def get_current_user(st_session: SessionContainer = Depends(verify_session())):
+    user_id = st_session.get_user_id()
     rows = (sb.table("profiles")
             .select("*, staff_role_assignments!profile_id(role, revoked_at)")
-            .eq("id", claims["sub"]).execute().data)
+            .eq("id", user_id).execute().data)
     if not rows:
         raise HTTPException(status_code=401, detail="Profile not found")
     p = rows[0]
@@ -187,8 +245,9 @@ def get_reward_kudam(profile_id: str):
 def rewards_status(user: dict = Depends(get_current_user)):
     k = get_reward_kudam(user["id"])
     if k:
-        return {"discount_percent": 20, "kudam_id": k["id"], "kudam_name": k["name"]}
-    return {"discount_percent": 0}
+        return {"discount_percent": 20, "kudam_id": k["id"], "kudam_name": k["name"],
+                "saved_amount": round(k["saved_paise"] / 100)}
+    return {"discount_percent": 0, "saved_amount": 0}
 
 
 # ---------- Products ----------
@@ -248,6 +307,7 @@ class OrderCreate(BaseModel):
     qty_kg: Optional[float] = None
     pickup_date: Optional[str] = None
     delivery_window: Optional[str] = None
+    redeem_kudam_id: Optional[str] = None
 
 
 class VerifyIn(BaseModel):
@@ -262,6 +322,7 @@ def create_order(body: OrderCreate, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Invalid purpose")
     uid = user["id"]
     discount_percent = 0
+    credit_paise = 0
 
     if body.purpose == "deposit":
         if not body.kudam_id or not body.amount:
@@ -295,6 +356,16 @@ def create_order(body: OrderCreate, user: dict = Depends(get_current_user)):
             discount_kudam_id = reward["id"]
             discount_percent = 20
         amount = max(1, round(base * (1 - discount_percent / 100)))
+        base_paise = round(base * 100)
+        discount_paise = base_paise - amount * 100
+        redeem_kudam_id = None
+        if body.redeem_kudam_id:
+            kr = sb.table("kudams").select("saved_paise").eq("id", body.redeem_kudam_id) \
+                .eq("profile_id", uid).eq("status", "complete").execute().data
+            if kr:
+                redeem_kudam_id = body.redeem_kudam_id
+                credit_paise = min(kr[0]["saved_paise"], amount * 100)
+                amount = max(1, amount - credit_paise // 100)
         try:
             rzp_order = rzp.order.create({"amount": amount * 100, "currency": "INR", "payment_capture": 1})
         except Exception as e:
@@ -303,11 +374,12 @@ def create_order(body: OrderCreate, user: dict = Depends(get_current_user)):
         order = sb.table("orders").insert({
             "public_reference": f"MNM-{uuid.uuid4().hex[:8].upper()}",
             "profile_id": uid, "status": "pending_payment",
-            "subtotal_paise": round(base * 100), "discount_paise": round(base * 100) - amount * 100,
+            "subtotal_paise": base_paise, "discount_paise": discount_paise,
             "total_paise": amount * 100,
             "address_snapshot": {"pincode": user.get("pincode") or ""},
             "delivery_slot_snapshot": {"delivery_date": body.pickup_date, "window": window},
-            "policy_snapshot": {"discount_percent": discount_percent, "discount_kudam_id": discount_kudam_id},
+            "policy_snapshot": {"discount_percent": discount_percent, "discount_kudam_id": discount_kudam_id,
+                                "redeem_kudam_id": redeem_kudam_id, "credit_paise": credit_paise},
         }).execute().data[0]
         sb.table("order_items").insert({
             "order_id": order["id"], "product_id": prod["id"], "species_id": prod["species_id"],
@@ -323,7 +395,8 @@ def create_order(body: OrderCreate, user: dict = Depends(get_current_user)):
             "expires_at": (now_utc() + timedelta(hours=1)).isoformat()}).execute()
 
     return {"order_id": rzp_order["id"], "amount": amount * 100, "currency": "INR",
-            "key_id": os.environ["RAZORPAY_KEY_ID"], "discount_percent": discount_percent}
+            "key_id": os.environ["RAZORPAY_KEY_ID"], "discount_percent": discount_percent,
+            "credit_paise": credit_paise}
 
 
 def verify_signature(body: VerifyIn):
@@ -425,6 +498,9 @@ def verify_payment(body: VerifyIn, user: dict = Depends(get_current_user)):
     if policy.get("discount_kudam_id"):
         sb.table("kudams").update({"status": "redeemed", "redeemed_at": now_utc().isoformat()}) \
             .eq("id", policy["discount_kudam_id"]).execute()
+    if policy.get("redeem_kudam_id") and policy.get("redeem_kudam_id") != policy.get("discount_kudam_id"):
+        sb.table("kudams").update({"status": "redeemed", "redeemed_at": now_utc().isoformat()}) \
+            .eq("id", policy["redeem_kudam_id"]).execute()
     order = sb.table("orders").select("*, order_items(*)").eq("id", att["order_id"]).execute().data[0]
     queue_order_notification(order, "booking_confirmed", user)
     return {"ok": True, "purpose": "booking", "booking": booking_out(order)}

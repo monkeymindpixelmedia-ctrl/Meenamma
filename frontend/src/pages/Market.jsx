@@ -19,6 +19,7 @@ export default function Market() {
   const [qty, setQty] = useState(1);
   const [date, setDate] = useState(tomorrow());
   const [win, setWin] = useState("6:00 AM");
+  const [redeem, setRedeem] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [reward, setReward] = useState(null);
@@ -38,6 +39,9 @@ export default function Market() {
     const base = p.price_per_kg * qty;
     return discount ? Math.round(base * (1 - discount / 100)) : Math.round(base);
   };
+  const creditFor = (p) =>
+    redeem && reward?.kudam_id ? Math.min(reward.saved_amount || 0, priceFor(p)) : 0;
+  const payableFor = (p) => Math.max(priceFor(p) - creditFor(p), 1);
 
   const book = async (p) => {
     if (!user) {
@@ -48,10 +52,13 @@ export default function Market() {
     setMsg("");
     try {
       await payWithRazorpay(
-        { purpose: "booking", product_id: p.id, qty_kg: Number(qty), pickup_date: date, delivery_window: win },
+        {
+          purpose: "booking", product_id: p.id, qty_kg: Number(qty), pickup_date: date,
+          delivery_window: win, redeem_kudam_id: redeem ? reward?.kudam_id : undefined,
+        },
         user
       );
-      setReceipt({ product: p, date, win, mode: "book", qty, total: priceFor(p) });
+      setReceipt({ product: p, date, win, mode: "book", qty, total: payableFor(p) });
       setSelected(null);
       if (user) api.get("/rewards/status").then(({ data }) => setReward(data)).catch(() => {});
     } catch (err) {
@@ -229,6 +236,24 @@ export default function Market() {
                 </p>
               )}
 
+              {mode === "book" && reward?.kudam_id && (
+                <label
+                  className="flex items-center justify-between gap-3 mt-6 pt-4 border-t-[0.5px] border-obsidian/10 cursor-pointer"
+                  data-testid="redeem-toggle"
+                >
+                  <span className="text-obsidian/70 text-[11px]">
+                    Redeem my full kudam ({reward.kudam_name}) —{" "}
+                    <span className="num">₹{Math.min(reward.saved_amount || 0, priceFor(selected)).toLocaleString("en-IN")}</span> off
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={redeem}
+                    onChange={(e) => { haptic(); setRedeem(e.target.checked); }}
+                    className="accent-gold"
+                  />
+                </label>
+              )}
+
               <div className="flex justify-between items-center mt-8 border-t-[0.5px] border-obsidian/10 pt-6">
                 <p className="text-obsidian/60 text-sm uppercase tracking-luxury text-[10px]">
                   {mode === "reserve" ? "Pay now · 25% advance" : <>Total {discount > 0 && <span className="text-gold-dim">({discount}% off)</span>}</>}
@@ -244,7 +269,10 @@ export default function Market() {
                       {discount > 0 && (
                         <span className="text-obsidian/30 line-through text-lg mr-3 num">₹{Math.round(selected.price_per_kg * qty).toLocaleString("en-IN")}</span>
                       )}
-                      <span className="rupee">₹</span>{priceFor(selected).toLocaleString("en-IN")}
+                      <span className="rupee">₹</span>{payableFor(selected).toLocaleString("en-IN")}
+                      {creditFor(selected) > 0 && (
+                        <span className="text-gold-dim text-[10px] block">incl. ₹{creditFor(selected).toLocaleString("en-IN")} kudam credit</span>
+                      )}
                     </>
                   )}
                 </p>
