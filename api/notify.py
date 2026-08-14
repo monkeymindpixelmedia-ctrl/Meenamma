@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 import httpx
 
 RESEND_ENDPOINT = "https://api.resend.com/emails"
-EMAIL_FROM = os.environ.get("NOTIFICATIONS_FROM_EMAIL", "Meenamma <noreply@meenamma.in>")
+EMAIL_FROM = os.environ.get("NOTIFICATIONS_FROM_EMAIL", "Meenamma <noreply@meenamma.org>")
 MAX_ATTEMPTS = 3
 
 SUBJECTS = {
