@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from jwt import PyJWKClient
 from pydantic import BaseModel, Field
 from supabase import create_client
+from api.notify import drain_notification_outbox, queue_notification
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 sb = create_client(SUPABASE_URL, os.environ["SUPABASE_SERVICE_ROLE_KEY"])
@@ -215,10 +216,12 @@ def booking_out(o: dict) -> dict:
     items = o.get("order_items") or []
     it = items[0] if items else {}
     snap = it.get("item_snapshot") or {}
+    slot = o.get("delivery_slot_snapshot") or {}
     return {"id": o["id"], "product_name": snap.get("name", ""),
             "qty_kg": (it.get("net_weight_grams") or 0) / 1000,
             "amount": round(o["total_paise"] / 100),
-            "pickup_date": (o.get("delivery_slot_snapshot") or {}).get("delivery_date", ""),
+            "pickup_date": slot.get("delivery_date", ""),
+            "delivery_window": slot.get("window", ""),
             "status": o["status"],
             "discount_percent": (o.get("policy_snapshot") or {}).get("discount_percent", 0),
             "created_at": o["created_at"]}
@@ -370,6 +373,7 @@ def verify_payment(body: VerifyIn, user: dict = Depends(get_current_user)):
                                          "balance_payment_id": body.razorpay_payment_id,
                                          "order_id": order["id"]}).eq("id", r["id"]).execute()
         full = sb.table("orders").select("*, order_items(*)").eq("id", order["id"]).execute().data[0]
+        queue_order_notification(full, "booking_confirmed", user)
         return {"ok": True, "purpose": "reservation_complete", "booking": booking_out(full)}
 
     ka = (sb.table("kudam_payment_attempts").select("*")
@@ -413,6 +417,7 @@ def verify_payment(body: VerifyIn, user: dict = Depends(get_current_user)):
         sb.table("kudams").update({"status": "redeemed", "redeemed_at": now_utc().isoformat()}) \
             .eq("id", policy["discount_kudam_id"]).execute()
     order = sb.table("orders").select("*, order_items(*)").eq("id", att["order_id"]).execute().data[0]
+    queue_order_notification(order, "booking_confirmed", user)
     return {"ok": True, "purpose": "booking", "booking": booking_out(order)}
 
 
@@ -543,6 +548,32 @@ def reservation_complete_order(reservation_id: str, body: ReservationCompleteIn,
             "key_id": os.environ["RAZORPAY_KEY_ID"], "discount_percent": 0}
 
 
+def queue_order_notification(order: dict, event_key: str, user: Optional[dict] = None):
+    """Queue an outbox row for an order event and best-effort drain it."""
+    prof = order.get("profiles") or user or {}
+    items = order.get("order_items") or []
+    it = items[0] if items else {}
+    snap = it.get("item_snapshot") or {}
+    slot = order.get("delivery_slot_snapshot") or {}
+    payload = {
+        "email": prof.get("email") or "",
+        "name": prof.get("display_name") or prof.get("name") or "",
+        "product": snap.get("name") or "",
+        "reference": order.get("public_reference") or "",
+        "amount": round((order.get("total_paise") or 0) / 100),
+        "date": slot.get("delivery_date") or "",
+        "slot": slot.get("window") or "6:00 AM",
+    }
+    if queue_notification(sb, aggregate_type="order", aggregate_id=order["id"],
+                          event_key=event_key,
+                          idempotency_key=f"booking:{order['id']}:{event_key}",
+                          payload=payload):
+        try:
+            drain_notification_outbox(sb)
+        except Exception:
+            pass
+
+
 def notify_catch_arrived(prod: dict):
     disp = prod.get("display_en") or {}
     res = (sb.table("reservations").select("*, profiles(email, display_name)")
@@ -551,16 +582,12 @@ def notify_catch_arrived(prod: dict):
         sb.table("reservations").update({"status": "arrived", "arrived_at": now_utc().isoformat()}) \
             .eq("id", r["id"]).execute()
         prof = r.get("profiles") or {}
-        try:
-            sb.table("notification_outbox").insert({
-                "aggregate_type": "reservation", "aggregate_id": r["id"],
-                "event_key": "catch_arrived",
-                "idempotency_key": f"reservation:{r['id']}:arrived",
-                "payload": {"email": prof.get("email"), "name": prof.get("display_name"),
-                            "product": disp.get("name"), "tamil_name": disp.get("tamil_name"),
-                            "message": f"{disp.get('name')} has landed. Complete your booking to claim your reserved catch."}}).execute()
-        except Exception:
-            pass
+        queue_notification(sb, aggregate_type="reservation", aggregate_id=r["id"],
+                           event_key="catch_arrived",
+                           idempotency_key=f"reservation:{r['id']}:arrived",
+                           payload={"email": prof.get("email"), "name": prof.get("display_name"),
+                                    "product": disp.get("name"), "tamil_name": disp.get("tamil_name"),
+                                    "message": f"{disp.get('name')} has landed. Complete your booking to claim your reserved catch."})
 
 
 # ---------- Live stats (public) ----------
@@ -692,7 +719,9 @@ def admin_update_booking(booking_id: str, body: BookingStatusIn, admin: dict = D
     rows = sb.table("orders").update(upd).eq("id", booking_id).execute().data
     if not rows:
         raise HTTPException(status_code=404, detail="Booking not found")
-    order = sb.table("orders").select("*, order_items(*)").eq("id", booking_id).execute().data[0]
+    order = sb.table("orders").select("*, order_items(*), profiles(email, display_name)").eq("id", booking_id).execute().data[0]
+    if body.status in ("ready", "delivered"):
+        queue_order_notification(order, f"booking_{body.status}")
     return booking_out(order)
 
 
@@ -745,6 +774,19 @@ async def admin_upload(file: UploadFile = File(...), admin: dict = Depends(get_a
     with open(os.path.join(UPLOAD_DIR, fname), "wb") as f:
         f.write(data)
     return {"url": f"/api/uploads/{fname}"}
+
+
+# ---------- Notifications (outbox -> email worker) ----------
+@api.get("/notifications/process")
+def process_notifications(admin: dict = Depends(get_admin_user)):
+    return {"ok": True, **drain_notification_outbox(sb)}
+
+
+@api.get("/admin/notifications")
+def admin_notifications(admin: dict = Depends(get_admin_user)):
+    rows = (sb.table("notification_outbox").select("*")
+            .order("created_at", desc=True).limit(50).execute().data)
+    return rows
 
 
 @api.get("/health")

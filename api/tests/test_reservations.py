@@ -120,8 +120,10 @@ def test_ooli_booking_in_orders(demo_headers):
     ooli_orders = [b for b in rows if "ooli" in (b.get("product_name", "").lower())]
     if not ooli_orders:
         pytest.skip(f"No Ooli booking present. Bookings: {rows}")
-    match = [b for b in ooli_orders if b.get("amount") == 920 and b.get("status") == "confirmed"]
-    assert match, f"No Ooli order with total=920 status=confirmed. Ooli orders: {ooli_orders}"
+    # The order may have been advanced by admin workflow (confirmed -> ready/delivered),
+    # so accept any active status; the invariant is the ₹920 order exists.
+    match = [b for b in ooli_orders if b.get("amount") == 920 and b.get("status") in ("confirmed", "ready", "delivered")]
+    assert match, f"No Ooli order with total=920 active. Ooli orders: {ooli_orders}"
 
 
 def test_complete_order_rejects_completed_reservation(demo_headers):
