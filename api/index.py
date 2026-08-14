@@ -149,6 +149,24 @@ def create_kudam(body: KudamCreate, user: dict = Depends(get_current_user)):
     return kudam_out(d)
 
 
+@api.delete("/kudams/{kudam_id}")
+def delete_kudam(kudam_id: str, user: dict = Depends(get_current_user)):
+    rows = sb.table("kudams").select("*").eq("id", kudam_id).eq("profile_id", user["id"]).execute().data
+    if not rows:
+        raise HTTPException(status_code=404, detail="Kudam not found")
+    k = rows[0]
+    if k["saved_paise"] > 0:
+        raise HTTPException(status_code=400,
+                            detail="This kudam holds savings. Spend or redeem it before deleting.")
+    # Clean up any unpaid Razorpay attempt rows that reference the kudam (FK)
+    attempts = sb.table("kudam_payment_attempts").select("id") \
+        .eq("kudam_id", kudam_id).neq("status", "paid").execute().data
+    for a in attempts:
+        sb.table("kudam_payment_attempts").delete().eq("id", a["id"]).execute()
+    sb.table("kudams").delete().eq("id", kudam_id).execute()
+    return {"ok": True}
+
+
 @api.get("/kudams/{kudam_id}/deposits")
 def kudam_deposits(kudam_id: str, user: dict = Depends(get_current_user)):
     rows = (sb.table("kudam_deposits").select("*").eq("kudam_id", kudam_id)

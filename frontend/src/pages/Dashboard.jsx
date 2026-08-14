@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { SavingsMandala } from "../components/SavingsMandala";
 import { useAuth } from "../context/AuthContext";
 import { api, payWithRazorpay, setupAutopay, formatApiErrorDetail, imgUrl, haptic } from "../lib/api";
@@ -169,6 +169,23 @@ export default function Dashboard() {
       setShowCreate(false);
       setNewName("");
       setNewGoal("");
+    } catch (err) {
+      setMsg(formatApiErrorDetail(err.response?.data?.detail) || err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteKudam = async (k) => {
+    haptic();
+    if (!window.confirm(`Delete "${k.name}" forever? This cannot be undone.`)) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      await api.delete(`/kudams/${k.id}`);
+      setKudams((ks) => ks.filter((x) => x.id !== k.id));
+      if (activeId === k.id) setActiveId((kudams || []).find((x) => x.id !== k.id)?.id || null);
+      setSuccess(`"${k.name}" laid to rest.`);
     } catch (err) {
       setMsg(formatApiErrorDetail(err.response?.data?.detail) || err.message);
     } finally {
@@ -368,20 +385,33 @@ export default function Dashboard() {
                 </div>
                 <div className="space-y-3">
                   {kudams.map((k) => (
-                    <button
+                    <div
                       key={k.id}
                       onClick={() => setActiveId(k.id)}
                       data-testid={`kudam-card-${k.id}`}
-                      className={`w-full text-left p-4 border transition-all duration-300 ${
+                      className={`w-full text-left p-4 border transition-all duration-300 cursor-pointer ${
                         k.id === activeId ? "border-gold bg-alabaster/60" : "border-gold/25 bg-white"
                       }`}
                     >
                       <div className="flex justify-between items-center">
-                        <div>
-                          <p className="font-serif text-obsidian text-lg font-medium">{k.name}</p>
+                        <div className="min-w-0">
+                          <p className="font-serif text-obsidian text-lg font-medium truncate">{k.name}</p>
                           <p className="num text-obsidian/75 text-[12px]"><span className="rupee">₹</span>{k.saved_amount.toLocaleString("en-IN")} / <span className="rupee">₹</span>{k.goal_amount.toLocaleString("en-IN")}</p>
                         </div>
-                        <span className="num-lg text-gold-dim text-xl">{Math.round(Math.min(k.saved_amount / k.goal_amount, 1) * 100)}%</span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="num-lg text-gold-dim text-xl">{Math.round(Math.min(k.saved_amount / k.goal_amount, 1) * 100)}%</span>
+                          {k.saved_amount === 0 && k.status === "active" && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); deleteKudam(k); }}
+                              disabled={busy}
+                              title="Delete kudam"
+                              data-testid={`delete-kudam-${k.id}`}
+                              className="text-obsidian/35 hover:text-red-800 transition-colors p-1"
+                            >
+                              <Trash2 size={14} strokeWidth={1.5} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <div className="h-1 bg-gold/15 mt-2">
                         <div className="h-full bg-gold" style={{ width: `${Math.min(k.saved_amount / k.goal_amount, 1) * 100}%` }} />
@@ -389,7 +419,7 @@ export default function Dashboard() {
                       {k.status !== "active" && (
                         <p className="text-gold-dim text-[9px] uppercase mt-2" style={{ letterSpacing: "0.25em" }}>{k.status}</p>
                       )}
-                    </button>
+                    </div>
                   ))}
                 </div>
                 <AnimatePresence>

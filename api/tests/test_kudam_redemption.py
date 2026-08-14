@@ -116,6 +116,41 @@ def test_redeem_credit_covers_whole_order(demo_headers, products):
     assert d["credit_paise"] > 0, d
 
 
+def test_delete_empty_kudam(demo_headers):
+    k = _new_kudam(demo_headers, 250)
+    r = requests.delete(f"{API}/kudams/{k['id']}", headers=demo_headers)
+    assert r.status_code == 200, r.text
+    kudams = requests.get(f"{API}/kudams", headers=demo_headers).json()
+    assert not any(x["id"] == k["id"] for x in kudams), "deleted kudam still listed"
+
+
+def test_delete_kudam_with_savings_blocked(demo_headers):
+    k = _new_kudam(demo_headers, 500)
+    _fill_kudam(demo_headers, k["id"], 40)
+    r = requests.delete(f"{API}/kudams/{k['id']}", headers=demo_headers)
+    assert r.status_code == 400, r.text
+    assert "savings" in r.text.lower(), r.text
+    # and it still exists, untouched
+    kudams = requests.get(f"{API}/kudams", headers=demo_headers).json()
+    mine = next((x for x in kudams if x["id"] == k["id"]), None)
+    assert mine and mine["saved_amount"] == 40
+
+
+def test_delete_nonexistent_kudam_404(demo_headers):
+    r = requests.delete(f"{API}/kudams/{uuid.uuid4()}", headers=demo_headers)
+    assert r.status_code == 404, r.text
+
+
+def test_delete_other_users_kudam_404(demo_headers):
+    ADMIN_EMAIL = "admin@meenamma.in"
+    ADMIN_PASSWORD = "TempleGold@2026"
+    admin_headers = {"Authorization": f"Bearer {_login(ADMIN_EMAIL, ADMIN_PASSWORD)}"}
+    k = requests.post(f"{API}/kudams", headers=admin_headers,
+                      json={"name": f"ADMINDEL_{uuid.uuid4().hex[:6]}", "goal_amount": 100}).json()
+    r = requests.delete(f"{API}/kudams/{k['id']}", headers=demo_headers)
+    assert r.status_code == 404, r.text
+
+
 def test_redeem_non_complete_kudam_falls_back(demo_headers, products):
     k = _new_kudam(demo_headers, 500)  # never filled -> status active
     prod = next((p for p in products if p.get("available")), products[0])

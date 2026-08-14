@@ -1,91 +1,57 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { api } from "../lib/api";
-import { useSessionContext } from 'supertokens-auth-react/recipe/session';
-import { signOut } from "supertokens-auth-react/recipe/session";
-import { signIn, signUp } from "supertokens-auth-react/recipe/emailpassword";
+import { supabase } from "../lib/supabase";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const sessionContext = useSessionContext();
   const [user, setUser] = useState(null); // null=checking, false=guest, object=user
 
   const fetchMe = async () => {
-    try {
-      const { data } = await api.get("/auth/me");
-      setUser(data);
-      return data;
-    } catch (e) {
-      setUser(false);
-      return false;
-    }
+    const { data } = await api.get("/auth/me");
+    setUser(data);
+    return data;
   };
 
   useEffect(() => {
-    if (sessionContext.loading) {
-      setUser(null);
-    } else if (sessionContext.doesSessionExist) {
-      fetchMe();
-    } else {
-      setUser(false);
-    }
-  }, [sessionContext]);
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) fetchMe().catch(() => setUser(false));
+      else setUser(false);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") setUser(false);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
 
   const login = async (email, password) => {
-    try {
-      let response = await signIn({
-        formFields: [
-          { id: "email", value: email },
-          { id: "password", value: password }
-        ]
-      });
-      if (response.status === "FIELD_ERROR") {
-        response.formFields.forEach(formField => {
-            if (formField.id === "email") {
-                throw new Error(formField.error);
-            }
-        });
-      } else if (response.status === "WRONG_CREDENTIALS_ERROR") {
-          throw new Error("Invalid email or password");
-      } else if (response.status === "OK") {
-          return fetchMe();
-      }
-    } catch (err) {
-      throw err;
-    }
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message === "Invalid login credentials" ? "Invalid email or password" : error.message);
+    return fetchMe();
   };
 
   const register = async (name, email, password, daily_plan = 5, extra = {}) => {
-    let response = await signUp({
-        formFields: [
-            { id: "email", value: email },
-            { id: "password", value: password },
-            { id: "name", value: name }
-        ]
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { name } },
     });
-    if (response.status === "FIELD_ERROR") {
-      throw new Error("Invalid fields");
-    }
-    if (response.status === "OK") {
-        const { data: profile } = await api.patch("/me", {
-          name,
-          daily_plan,
-          pincode: extra.pincode || "",
-          upi_id: extra.upi_id || "",
-        });
-        setUser(profile);
-        return profile;
-    }
-    if (response.status === "SIGN_UP_NOT_ALLOWED") {
-        throw new Error("Sign up not allowed");
-    }
-    throw new Error("Signup failed");
+    if (error) throw new Error(error.message);
+    if (!data.session) throw new Error("Please check your email to confirm your account.");
+    const { data: profile } = await api.patch("/me", {
+      name,
+      daily_plan,
+      pincode: extra.pincode || "",
+      upi_id: extra.upi_id || "",
+    });
+    setUser(profile);
+    return profile;
   };
 
   const updateUser = (data) => setUser(data);
 
   const logout = async () => {
-    await signOut();
+    await supabase.auth.signOut();
     setUser(false);
   };
 
