@@ -174,6 +174,24 @@ export async function setupAutopay(user, { stepAmount } = {}) {
           reject(checkoutError(e, "Autopay activation failed."));
         }
       },
+      method: {
+        card: 1,
+        upi: 1,
+        emandate: 0,
+        nach: 0,
+      },
+      config: {
+        display: {
+          blocks: {
+            banks: {
+              name: "UPI AutoPay",
+              instruments: [{ method: "upi" }],
+            },
+          },
+          sequence: ["block.banks"],
+          preferences: { show_default_blocks: true },
+        },
+      },
       modal: { ondismiss: () => reject(new Error("Autopay setup cancelled")) },
     });
     if (typeof rzp.on === "function") {
