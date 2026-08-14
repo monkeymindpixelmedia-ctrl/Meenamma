@@ -111,6 +111,15 @@ export default function Login() {
             </button>
           </div>
           {error && <p className="text-obsidian text-sm italic font-serif" data-testid="login-error">{error}</p>}
+          <div className="text-right -mt-2">
+            <Link
+              to="/auth/reset-password"
+              className="text-obsidian/70 text-xs underline underline-offset-4 decoration-gold"
+              data-testid="forgot-password-link"
+            >
+              Forgot password?
+            </Link>
+          </div>
           <button className="btn-obsidian w-full" disabled={busy} data-testid="login-submit-btn">
             {busy ? "Opening…" : "Enter"}
           </button>

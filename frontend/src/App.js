@@ -9,6 +9,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ThirdPartyCallback from "./pages/ThirdPartyCallback";
 import VerifyEmail from "./pages/VerifyEmail";
+import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
 import Market from "./pages/Market";
 import Admin from "./pages/Admin";
@@ -61,6 +62,7 @@ function Shell() {
               <Route path="/register" element={<Register />} />
               <Route path="/auth/callback/google" element={<ThirdPartyCallback />} />
               <Route path="/auth/verify-email" element={<VerifyEmail />} />
+              <Route path="/auth/reset-password" element={<ResetPassword />} />
               <Route
                 path="/dashboard"
                 element={
