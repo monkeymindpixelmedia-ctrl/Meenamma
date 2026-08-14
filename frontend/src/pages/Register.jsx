@@ -2,10 +2,10 @@ import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
-import { formatApiErrorDetail, haptic, setupAutopay } from "../lib/api";
+import { formatApiErrorDetail, haptic, setupAutopay, api } from "../lib/api";
 
 export default function Register() {
-  const { register } = useAuth();
+  const { register, user: existingUser, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
@@ -65,7 +65,17 @@ export default function Register() {
     setBusy(true);
     setError("");
     try {
-      const loggedInUser = await register(name, email, password, plan, { pincode });
+      let loggedInUser;
+      if (existingUser) {
+        // Already authenticated via Google OAuth — skip email/password sign-up.
+        // Bootstrap updates name, plan, pincode and handles 409 gracefully.
+        await api.post("/profile/bootstrap", {
+          name, daily_plan: plan, pincode,
+        });
+        loggedInUser = await refreshUser();
+      } else {
+        loggedInUser = await register(name, email, password, plan, { pincode });
+      }
       await setupAutopay(loggedInUser, { stepAmount: plan });
       navigate("/dashboard");
     } catch (err) {
@@ -94,34 +104,36 @@ export default function Register() {
               <form onSubmit={toStep2} className="space-y-6 mt-10">
                 <input className="input-minimal" placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} required data-testid="register-name-input" />
                 <input className="input-minimal" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required data-testid="register-email-input" />
-                <div>
-                  <input
-                    className="input-minimal"
-                    type="password"
-                    placeholder="Password"
-                    value={password}
-                    onChange={(e) => { setPassword(e.target.value); setPwTouched(true); }}
-                    required
-                    data-testid="register-password-input"
-                  />
-                  {pwTouched && (
-                    <motion.ul
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-2 space-y-1"
-                    >
-                      {pwRules.map((r) => (
-                        <li key={r.label} className={`flex items-center gap-1.5 text-xs font-serif transition-colors duration-200 ${r.ok ? "text-green-700" : "text-obsidian/60"}`}>
-                          <span>{r.ok ? "✓" : "·"}</span>
-                          {r.label}
-                        </li>
-                      ))}
-                    </motion.ul>
-                  )}
-                </div>
+                {!existingUser && (
+                  <div>
+                    <input
+                      className="input-minimal"
+                      type="password"
+                      placeholder="Password"
+                      value={password}
+                      onChange={(e) => { setPassword(e.target.value); setPwTouched(true); }}
+                      required
+                      data-testid="register-password-input"
+                    />
+                    {pwTouched && (
+                      <motion.ul
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-2 space-y-1"
+                      >
+                        {pwRules.map((r) => (
+                          <li key={r.label} className={`flex items-center gap-1.5 text-xs font-serif transition-colors duration-200 ${r.ok ? "text-green-700" : "text-obsidian/60"}`}>
+                            <span>{r.ok ? "✓" : "·"}</span>
+                            {r.label}
+                          </li>
+                        ))}
+                      </motion.ul>
+                    )}
+                  </div>
+                )}
                 <input className="input-minimal num" placeholder="PIN code (delivery area)" value={pincode} onChange={(e) => setPincode(e.target.value)} pattern="[0-9]{6}" maxLength={6} required data-testid="register-pincode-input" />
                 {error && <p className="text-obsidian text-sm italic font-serif" data-testid="register-error">{error}</p>}
-                <button className="btn-obsidian w-full" disabled={checking || !pwValid} data-testid="register-next-btn">
+                <button className="btn-obsidian w-full" disabled={checking || (!existingUser && !pwValid)} data-testid="register-next-btn">
                   {checking ? "Checking serviceability…" : "Continue"}
                 </button>
                 {checking && (
