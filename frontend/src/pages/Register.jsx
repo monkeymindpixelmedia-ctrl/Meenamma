@@ -67,6 +67,12 @@ export default function Register() {
       } else {
         loggedInUser = await register(name, email, password, plan, { pincode, cadence });
       }
+
+      if (loggedInUser?.verificationRequired) {
+        navigate("/auth/verify-email");
+        return;
+      }
+
       if (cadence !== "manual") {
         await setupAutopay(loggedInUser, { stepAmount: plan, cadence });
       }

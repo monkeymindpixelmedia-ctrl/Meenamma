@@ -33,6 +33,10 @@ export function AuthProvider({ children }) {
     if (response.status === "FIELD_ERROR") throw new Error(response.formFields.map((field) => field.error).join(" "));
     if (response.status === "WRONG_CREDENTIALS_ERROR") throw new Error("Invalid email or password");
     if (response.status === "SIGN_IN_NOT_ALLOWED") throw new Error(response.reason);
+    const isVerified = await EmailVerification.isEmailVerified();
+    if (!isVerified?.isVerified) {
+      return { verificationRequired: true };
+    }
     return refreshUser();
   };
 
@@ -51,6 +55,10 @@ export function AuthProvider({ children }) {
       pincode: extra.pincode || "",
       upi_id: extra.upi_id || "",
     });
+    const isVerified = await EmailVerification.isEmailVerified();
+    if (!isVerified?.isVerified) {
+      return { verificationRequired: true };
+    }
     return refreshUser();
   };
 
