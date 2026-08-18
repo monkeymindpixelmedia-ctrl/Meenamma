@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { useAuth } from "../context/AuthContext";
+import { api } from "../lib/api";
+import { PENDING_REGISTRATION_KEY, useAuth } from "../context/AuthContext";
 
 export default function VerifyEmail() {
   const navigate = useNavigate();
@@ -31,7 +32,13 @@ export default function VerifyEmail() {
         const { data, error } = await supabase.auth.getUser();
         if (error) throw error;
         if (data.user?.email_confirmed_at) {
+          const pendingRegistration = localStorage.getItem(PENDING_REGISTRATION_KEY);
+          if (pendingRegistration) {
+            await api.post("/profile/bootstrap", JSON.parse(pendingRegistration));
+          }
           localStorage.removeItem("meenamma_pending_email");
+          localStorage.removeItem(PENDING_REGISTRATION_KEY);
+          localStorage.removeItem("meenamma_ref");
           setStatus("verified");
           setMessage("Your email is verified. Taking you to your dashboard…");
           await refreshUser(sessionData.session);

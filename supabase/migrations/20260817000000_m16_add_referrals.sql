@@ -13,6 +13,6 @@ CREATE INDEX IF NOT EXISTS profiles_referred_by_idx
 -- We'll use a combination of the first 4 letters of their name (uppercased, alphanumeric only) and a short hash of their ID
 UPDATE profiles
 SET referral_code = 
-    UPPER(SUBSTRING(REGEXP_REPLACE(COALESCE(name, 'USER'), '[^a-zA-Z0-9]', '', 'g') FROM 1 FOR 4)) || 
+    UPPER(SUBSTRING(REGEXP_REPLACE(COALESCE(display_name, 'USER'), '[^a-zA-Z0-9]', '', 'g') FROM 1 FOR 4)) ||
     UPPER(SUBSTRING(REPLACE(id::text, '-', '') FROM 1 FOR 4))
 WHERE referral_code IS NULL;

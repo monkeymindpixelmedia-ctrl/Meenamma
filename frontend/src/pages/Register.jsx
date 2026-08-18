@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { formatApiErrorDetail, haptic, setupAutopay, api } from "../lib/api";
 
 export default function Register() {
-  const { register, user: existingUser, refreshUser } = useAuth();
+  const { register, user: existingUser, refreshUser, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
@@ -20,6 +20,18 @@ export default function Register() {
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(false);
   const [pwTouched, setPwTouched] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(null);
+
+  React.useEffect(() => {
+    let active = true;
+    const request = api.get?.("/config/auth");
+    if (request) {
+      request
+        .then(({ data }) => active && setGoogleEnabled(data?.google_enabled === true))
+        .catch(() => active && setGoogleEnabled(false));
+    }
+    return () => { active = false; };
+  }, []);
 
   React.useEffect(() => {
     if (existingUser) {
@@ -73,6 +85,7 @@ export default function Register() {
         await api.post("/profile/bootstrap", {
           name, daily_plan: plan, pincode, cadence, referred_by_code,
         });
+        localStorage.removeItem("meenamma_ref");
         loggedInUser = await refreshUser();
       } else {
         loggedInUser = await register(name, email, password, plan, { pincode, cadence, referred_by_code });
@@ -149,6 +162,41 @@ export default function Register() {
                   <motion.div className="h-0.5 bg-gold" initial={{ width: 0 }} animate={{ width: "100%" }} transition={{ duration: 1.1 }} data-testid="serviceability-bar" />
                 )}
               </form>
+
+              {!existingUser && (
+                <>
+                  <div className="gold-rule my-6" />
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-center gap-3 border border-gold/60 bg-white py-3.5 text-obsidian text-xs uppercase hover:bg-gold/10 transition-colors duration-300"
+                    style={{ letterSpacing: "0.18em" }}
+                    onClick={async () => {
+                      if (googleEnabled !== true) {
+                        if (googleEnabled === false) setError("Google sign-in is not configured.");
+                        return;
+                      }
+                      haptic();
+                      setBusy(true);
+                      setError("");
+                      try {
+                        await loginWithGoogle();
+                      } catch (err) {
+                        setError(err.message || "Could not start Google sign-in.");
+                        setBusy(false);
+                      }
+                    }}
+                    disabled={busy || googleEnabled !== true}
+                    data-testid="google-register-btn"
+                  >
+                    {googleEnabled === false ? "Google sign-in unavailable" : "Sign up with Google"}
+                  </button>
+                  {googleEnabled === false && (
+                    <p className="text-obsidian/60 text-xs mt-2 text-center" data-testid="google-register-unavailable">
+                      Google sign-in is not configured.
+                    </p>
+                  )}
+                </>
+              )}
             </motion.div>
           )}
 

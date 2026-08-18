@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from supabase import create_client
 from api.supabase_auth_config import (GOOGLE_ENABLED, SupabaseSession, bootstrap_session,
                                       session_identity, verified_session)
+from api.referrals import make_referral_code
 from api.notify import drain_notification_outbox, queue_notification
 from api import ladder
 
@@ -43,6 +44,17 @@ def now_utc():
 
 def slugify(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-") or "item"
+
+
+def referred_profile_id(code: Optional[str], current_user_id: Optional[str] = None) -> Optional[str]:
+    """Resolve a referral code without allowing invalid or self-referrals."""
+    normalized = (code or "").strip().upper()
+    if not normalized:
+        return None
+    rows = sb.table("profiles").select("id").eq("referral_code", normalized).limit(1).execute().data
+    if not rows or rows[0]["id"] == current_user_id:
+        return None
+    return rows[0]["id"]
 
 
 def require_razorpay_config() -> str:
@@ -92,7 +104,11 @@ def sync_profile_identity(user_id: str, email: str) -> dict:
         res = sb.table("profiles").select("*, staff_role_assignments!profile_id(role, revoked_at)").eq("id", user_id).execute().data
         return res[0] if res else {**old_p, "id": user_id, "email": email}
 
-    sb.table("profiles").insert({"id": user_id, "email": email}).execute()
+    sb.table("profiles").insert({
+        "id": user_id,
+        "email": email,
+        "referral_code": make_referral_code(None, user_id),
+    }).execute()
     new_res = sb.table("profiles").select("*, staff_role_assignments!profile_id(role, revoked_at)").eq("id", user_id).execute().data
     return new_res[0] if new_res else {"id": user_id, "email": email}
 
@@ -212,31 +228,37 @@ async def bootstrap_profile(body: ProfileIn,
     is_new = False
 
     # Check if a profile already exists for this user_id
-    existing = sb.table("profiles").select("id").eq("id", user_id).execute().data
+    existing = sb.table("profiles").select("id,referral_code,referred_by,display_name").eq("id", user_id).execute().data
     if existing:
+        current = existing[0]
+        if not current.get("referral_code"):
+            upd["referral_code"] = make_referral_code(
+                upd.get("display_name") or current.get("display_name"), user_id
+            )
+        if not current.get("referred_by"):
+            parent_id = referred_profile_id(getattr(body, "referred_by_code", None), user_id)
+            if parent_id:
+                upd["referred_by"] = parent_id
         sb.table("profiles").update(upd).eq("id", user_id).execute()
         profile_id = user_id
     else:
         # Check if the email already belongs to a profile from a different auth core
-        by_email = sb.table("profiles").select("id").eq("email", email).execute().data
+        by_email = sb.table("profiles").select("id,referral_code,referred_by").eq("email", email).execute().data
         if by_email:
             profile_id = by_email[0]["id"]
+            legacy_profile = by_email[0]
+            if not legacy_profile.get("referral_code"):
+                upd["referral_code"] = make_referral_code(upd.get("display_name"), profile_id)
+            if not legacy_profile.get("referred_by"):
+                parent_id = referred_profile_id(getattr(body, "referred_by_code", None), profile_id)
+                if parent_id:
+                    upd["referred_by"] = parent_id
             sb.table("profiles").update(upd).eq("id", profile_id).execute()
         else:
-            # Generate referral_code
-            import re
-            import uuid
-            base_name = re.sub(r'[^a-zA-Z0-9]', '', upd.get("display_name", "USER"))[:4].upper()
-            if not base_name: base_name = "USER"
-            short_id = str(user_id).replace("-", "")[:4].upper()
-            upd["referral_code"] = f"{base_name}{short_id}"
-            
-            # Resolve referred_by if code was provided
-            referred_by_code = getattr(body, "referred_by_code", None)
-            if referred_by_code:
-                referrer = sb.table("profiles").select("id").eq("referral_code", referred_by_code.upper()).execute().data
-                if referrer:
-                    upd["referred_by"] = referrer[0]["id"]
+            upd["referral_code"] = make_referral_code(upd.get("display_name"), user_id)
+            parent_id = referred_profile_id(getattr(body, "referred_by_code", None), user_id)
+            if parent_id:
+                upd["referred_by"] = parent_id
 
             sb.table("profiles").insert({"id": user_id, **upd}).execute()
             profile_id = user_id

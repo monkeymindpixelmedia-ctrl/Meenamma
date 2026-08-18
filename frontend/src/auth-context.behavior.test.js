@@ -44,6 +44,7 @@ describe("AuthContext Supabase behavior", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    localStorage.clear();
     supabase.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
     supabase.auth.onAuthStateChange.mockReturnValue({
       data: { subscription: { unsubscribe: jest.fn() } },
@@ -85,6 +86,7 @@ describe("AuthContext Supabase behavior", () => {
     });
     expect(api.post).toHaveBeenCalledWith("/profile/bootstrap", {
       name: "Meena",
+      email: "meena@example.com",
       daily_plan: 10,
       pincode: "600001",
       upi_id: "meena@upi",
@@ -109,6 +111,26 @@ describe("AuthContext Supabase behavior", () => {
     });
     expect(api.get).toHaveBeenCalledWith("/auth/me");
     expect(result).toEqual({ id: "user-1", name: "Meena" });
+  });
+
+  test("keeps referral attribution until an email-confirmed signup can bootstrap", async () => {
+    supabase.auth.signUp.mockResolvedValue({ data: { session: null }, error: null });
+
+    let result;
+    await act(async () => {
+      result = await currentAuth.register("New Member", "new@example.com", "safe-password", 5, {
+        pincode: "600001",
+        cadence: "weekly",
+        referred_by_code: "MEEN1234",
+      });
+    });
+
+    expect(result).toEqual({ verificationRequired: true });
+    expect(JSON.parse(localStorage.getItem("meenamma_pending_registration"))).toMatchObject({
+      name: "New Member",
+      email: "new@example.com",
+      referred_by_code: "MEEN1234",
+    });
   });
 
   test("starts Google sign-in with the application callback URL", async () => {

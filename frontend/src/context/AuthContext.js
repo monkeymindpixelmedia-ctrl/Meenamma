@@ -3,6 +3,9 @@ import { supabase } from "../lib/supabase";
 import { api } from "../lib/api";
 
 const AuthContext = createContext(null);
+export const PENDING_REGISTRATION_KEY = "meenamma_pending_registration";
+const PENDING_EMAIL_KEY = "meenamma_pending_email";
+const REFERRAL_KEY = "meenamma_ref";
 
 const authError = (error) => {
   if (!error) return null;
@@ -67,6 +70,15 @@ export function AuthProvider({ children }) {
   };
 
   const register = async (name, email, password, daily_plan = 5, extra = {}) => {
+    const registration = {
+      name,
+      email,
+      daily_plan,
+      pincode: extra.pincode || "",
+      upi_id: extra.upi_id || "",
+      cadence: extra.cadence || "weekly",
+      referred_by_code: extra.referred_by_code,
+    };
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -77,18 +89,15 @@ export function AuthProvider({ children }) {
     });
     if (error) throw authError(error);
     if (!data.session) {
-      localStorage.setItem("meenamma_pending_email", email);
+      localStorage.setItem(PENDING_REGISTRATION_KEY, JSON.stringify(registration));
+      localStorage.setItem(PENDING_EMAIL_KEY, email);
       return { verificationRequired: true };
     }
 
-    await api.post("/profile/bootstrap", {
-      name,
-      daily_plan,
-      pincode: extra.pincode || "",
-      upi_id: extra.upi_id || "",
-      cadence: extra.cadence || "weekly",
-      referred_by_code: extra.referred_by_code,
-    });
+    await api.post("/profile/bootstrap", registration);
+    localStorage.removeItem(PENDING_REGISTRATION_KEY);
+    localStorage.removeItem(PENDING_EMAIL_KEY);
+    localStorage.removeItem(REFERRAL_KEY);
     return refreshUser(data.session);
   };
 
