@@ -89,7 +89,7 @@ def test_auth_configures_required_recipes_google_and_official_middleware(configu
     assert init_call["app_info"].api_base_path == "/api/auth"
     assert init_call["recipe_list"] == ["emailpassword", "thirdparty", "emailverification", "session", "dashboard"]
     verification_args, verification_kwargs = calls["recipes"]["emailverification"]
-    assert (verification_args or (verification_kwargs["mode"],)) == ("REQUIRED",)
+    assert (verification_args or (verification_kwargs["mode"],)) == ("OPTIONAL",)
     assert auth.supertokens_middleware is fake_middleware
 
     _, thirdparty_kwargs = calls["recipes"]["thirdparty"]

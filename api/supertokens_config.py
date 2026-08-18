@@ -59,7 +59,7 @@ if GOOGLE_ENABLED:
     recipe_list.append(thirdparty.init(
         sign_in_and_up_feature=thirdparty.SignInAndUpFeature(providers=[google])))
 recipe_list.extend([
-    emailverification.init(mode="REQUIRED", email_delivery=verification_email_delivery()),
+    emailverification.init(mode="OPTIONAL", email_delivery=verification_email_delivery()),
     session.init(),
     dashboard.init(),
 ])

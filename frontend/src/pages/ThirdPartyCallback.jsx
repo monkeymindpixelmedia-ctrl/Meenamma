@@ -17,11 +17,16 @@ export default function ThirdPartyCallback() {
     const completeSignIn = async () => {
       try {
         const response = await signInAndUp();
+        console.log("SuperTokens ThirdParty signInAndUp response:", response);
         if (response.status === "NO_EMAIL_GIVEN_BY_PROVIDER") {
           throw new Error("Google did not provide an email address for this account.");
         }
-        if (response.status === "SIGN_IN_UP_NOT_ALLOWED") throw new Error(response.reason);
-        if (response.status !== "OK") throw new Error("Google sign-in could not be completed.");
+        if (response.status === "SIGN_IN_UP_NOT_ALLOWED") {
+          throw new Error(response.reason || "Google sign in/up is not allowed for this account.");
+        }
+        if (response.status !== "OK") {
+          throw new Error(`Google sign-in failed with status: ${response.status}`);
+        }
 
         const route = (u) => {
           if (!u) return "/auth/verify-email";
@@ -39,6 +44,7 @@ export default function ThirdPartyCallback() {
         const appUser = await refreshUser();
         navigate(route(appUser), { replace: true });
       } catch (err) {
+        console.error("Google sign-in callback error:", err);
         setError(err.message || "Google sign-in could not be completed.");
       }
     };

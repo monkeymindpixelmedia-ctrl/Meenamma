@@ -14,6 +14,7 @@ import Dashboard from "./pages/Dashboard";
 import Market from "./pages/Market";
 import Admin from "./pages/Admin";
 import Profile from "./pages/Profile";
+import Referral from "./pages/Referral";
 import Legal from "./pages/Legal";
 import Footer from "./components/Footer";
 import { motion, AnimatePresence } from "framer-motion";
@@ -83,6 +84,14 @@ function Shell() {
                 element={
                   <Protected>
                     <Profile />
+                  </Protected>
+                }
+              />
+              <Route
+                path="/referral"
+                element={
+                  <Protected>
+                    <Referral />
                   </Protected>
                 }
               />

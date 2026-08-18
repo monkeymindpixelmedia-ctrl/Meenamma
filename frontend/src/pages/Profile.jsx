@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { LogOut, Crown, Copy, Check } from "lucide-react";
+import { LogOut, Crown, Copy, Check, ArrowRight } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { api, formatApiErrorDetail, haptic } from "../lib/api";
 
@@ -118,6 +118,14 @@ export default function Profile() {
               <span className="text-obsidian/60 text-[10px] uppercase tracking-widest">Total Referred</span>
               <span className="font-serif text-obsidian text-2xl leading-none">{user?.referral_count || 0}</span>
             </div>
+            <Link
+              to="/referral"
+              className="mt-4 w-full flex items-center justify-center gap-2 py-3 text-obsidian text-[10px] uppercase tracking-[0.2em] border border-gold/30 hover:bg-gold/5 transition-colors duration-300"
+              data-testid="view-referral-page-link"
+            >
+              View Referral Page
+              <ArrowRight size={12} />
+            </Link>
           </motion.div>
         )}
 

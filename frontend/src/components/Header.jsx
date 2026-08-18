@@ -8,6 +8,7 @@ const links = [
   { to: "/home", label: "Home" },
   { to: "/dashboard", label: "Daily Kudam" },
   { to: "/market", label: "Fresh Catch" },
+  { to: "/referral", label: "Refer" },
 ];
 
 export default function Header() {
