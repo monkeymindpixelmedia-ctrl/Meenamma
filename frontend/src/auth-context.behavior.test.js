@@ -81,6 +81,8 @@ describe("AuthContext SuperTokens behavior", () => {
       daily_plan: 10,
       pincode: "600001",
       upi_id: "meena@upi",
+      cadence: "weekly",
+      referred_by_code: undefined,
     });
     expect(EmailPassword.signUp.mock.invocationCallOrder[0]).toBeLessThan(
       api.post.mock.invocationCallOrder[0]

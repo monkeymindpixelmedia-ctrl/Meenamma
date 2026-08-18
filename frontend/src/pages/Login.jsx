@@ -42,7 +42,13 @@ export default function Login() {
     setError("");
     try {
       const result = await login(em, pw);
-      navigate(result?.verificationRequired ? "/auth/verify-email" : "/dashboard");
+      if (result?.verificationRequired) {
+        navigate("/auth/verify-email");
+      } else if (result?.role === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/dashboard");
+      }
     } catch (err) {
       setError(formatApiErrorDetail(err.response?.data?.detail) || err.message || "Something went wrong. Please try again.");
     } finally {

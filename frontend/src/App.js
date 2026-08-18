@@ -41,6 +41,12 @@ const NAV_PAGES = ["/home", "/dashboard", "/market", "/admin", "/profile"];
 
 function Shell() {
   const location = useLocation();
+  React.useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const ref = params.get("ref");
+    if (ref) localStorage.setItem("meenamma_ref", ref);
+  }, [location]);
+
   const showChrome = NAV_PAGES.includes(location.pathname);
   return (
     <div className="w-full min-h-screen bg-alabaster-paper flex flex-col">

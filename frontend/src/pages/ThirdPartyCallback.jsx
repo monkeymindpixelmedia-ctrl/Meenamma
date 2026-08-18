@@ -25,9 +25,11 @@ export default function ThirdPartyCallback() {
 
         const route = (u) => {
           if (!u) return "/auth/verify-email";
+          if (u.role === "admin") return "/admin";
           // Send to onboarding if autopay was never set up or step not configured
           const onboarded = u.autopay_status === "active" ||
-                            (u.step_paise && u.step_paise > 0);
+                            (u.step_paise && u.step_paise > 0) ||
+                            (u.step_amount && u.step_amount > 0);
           return onboarded ? "/dashboard" : "/register";
         };
 

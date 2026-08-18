@@ -15,6 +15,20 @@ dist
 __pycache__/
 *.pyc
 
+# Python virtual environment
+api/venv/
+api/.venv/
+
 # WhatsApp auth session info
 auth_info_baileys/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Misc
+su
+helloworld
+scratch/
+.temp/
 

@@ -26,7 +26,7 @@ def configured_auth(monkeypatch):
     import supertokens_python
     import supertokens_python.asyncio as supertokens_asyncio
     from supertokens_python.framework import fastapi as supertokens_fastapi
-    from supertokens_python.recipe import emailpassword, emailverification, session, thirdparty
+    from supertokens_python.recipe import dashboard, emailpassword, emailverification, session, thirdparty
     from supertokens_python.recipe.session.framework import fastapi as session_fastapi
 
     calls = {"recipes": {}, "verify_session": []}
@@ -67,6 +67,7 @@ def configured_auth(monkeypatch):
     monkeypatch.setattr(emailverification, "init", recipe_recorder("emailverification"))
     monkeypatch.setattr(session, "init", recipe_recorder("session"))
     monkeypatch.setattr(thirdparty, "init", recipe_recorder("thirdparty"))
+    monkeypatch.setattr(dashboard, "init", recipe_recorder("dashboard"))
     monkeypatch.setattr(supertokens_fastapi, "get_middleware", lambda: FakeMiddleware)
     monkeypatch.setattr(session_fastapi, "verify_session", fake_verify_session)
     monkeypatch.setattr(supertokens_asyncio, "get_user", fake_get_user)
@@ -86,9 +87,9 @@ def test_auth_configures_required_recipes_google_and_official_middleware(configu
     assert init_call["supertokens_config"].connection_uri == values["SUPERTOKENS_CONNECTION_URI"]
     assert init_call["supertokens_config"].api_key == values["SUPERTOKENS_API_KEY"]
     assert init_call["app_info"].api_base_path == "/api/auth"
-    assert init_call["recipe_list"] == ["emailpassword", "thirdparty", "emailverification", "session"]
+    assert init_call["recipe_list"] == ["emailpassword", "thirdparty", "emailverification", "session", "dashboard"]
     verification_args, verification_kwargs = calls["recipes"]["emailverification"]
-    assert (verification_args or (verification_kwargs["mode"],)) == ("OPTIONAL",)
+    assert (verification_args or (verification_kwargs["mode"],)) == ("REQUIRED",)
     assert auth.supertokens_middleware is fake_middleware
 
     _, thirdparty_kwargs = calls["recipes"]["thirdparty"]
@@ -187,11 +188,19 @@ def test_profile_bootstrap_uses_session_identity_not_client_email(configured_aut
         def eq(self, *args, **kwargs):
             return self
 
-        def insert(self, *args, **kwargs):
+        def insert(self, row=None, *args, **kwargs):
+            if row is not None:
+                upserts.append((row, kwargs))
             return self
 
-        def upsert(self, row, **kwargs):
-            upserts.append((row, kwargs))
+        def update(self, row=None, *args, **kwargs):
+            if row is not None:
+                upserts.append((row, kwargs))
+            return self
+
+        def upsert(self, row=None, *args, **kwargs):
+            if row is not None:
+                upserts.append((row, kwargs))
             return self
 
         def execute(self):
@@ -209,7 +218,7 @@ def test_profile_bootstrap_uses_session_identity_not_client_email(configured_aut
     )
     result = asyncio.run(index.bootstrap_profile(malicious_body, Session()))
 
-    assert result == {"ok": True}
+    assert result.get("ok") is True
     assert upserts[0][0]["id"] == "server-canonical-id"
     assert upserts[0][0]["email"] == "verified@example.test"
     assert "attacker@example.test" not in upserts[0][0].values()
@@ -221,7 +230,7 @@ def test_supertokens_version_is_pinned():
 
 
 def test_profile_auth_users_foreign_key_migration_is_idempotent():
-    migration = (ROOT / "supabase" / "migration" /
+    migration = (ROOT / "supabase" / "migrations" /
                  "20260814000014_m14_supertokens_identity.sql").read_text(encoding="utf-8").lower()
 
     assert "pg_constraint" in migration

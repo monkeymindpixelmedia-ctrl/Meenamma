@@ -21,6 +21,14 @@ export default function Register() {
   const [checking, setChecking] = useState(false);
   const [pwTouched, setPwTouched] = useState(false);
 
+  React.useEffect(() => {
+    if (existingUser) {
+      if (existingUser.name && !name) setName(existingUser.name);
+      if (existingUser.email && !email) setEmail(existingUser.email);
+      if (existingUser.pincode && !pincode) setPincode(existingUser.pincode);
+    }
+  }, [existingUser]);
+
   const pwRules = [
     { ok: password.length >= 8, label: "At least 8 characters" },
     { ok: /[0-9]/.test(password),  label: "At least one number" },
@@ -57,26 +65,28 @@ export default function Register() {
     setError("");
     try {
       let loggedInUser;
+      const referred_by_code = localStorage.getItem("meenamma_ref") || undefined;
+      
       if (existingUser) {
         // Already authenticated via Google OAuth — skip email/password sign-up.
         // Bootstrap updates name, plan, pincode and handles 409 gracefully.
         await api.post("/profile/bootstrap", {
-          name, daily_plan: plan, pincode, cadence,
+          name, daily_plan: plan, pincode, cadence, referred_by_code,
         });
         loggedInUser = await refreshUser();
       } else {
-        loggedInUser = await register(name, email, password, plan, { pincode, cadence });
-      }
-
-      if (loggedInUser?.verificationRequired) {
-        navigate("/auth/verify-email");
-        return;
+        loggedInUser = await register(name, email, password, plan, { pincode, cadence, referred_by_code });
       }
 
       if (cadence !== "manual") {
         await setupAutopay(loggedInUser, { stepAmount: plan, cadence });
       }
-      navigate("/dashboard");
+
+      if (loggedInUser?.verificationRequired) {
+        navigate("/auth/verify-email");
+      } else {
+        navigate("/dashboard");
+      }
     } catch (err) {
       setError(formatApiErrorDetail(err.response?.data?.detail) || err.message || "Something went wrong. Please try again.");
     } finally {

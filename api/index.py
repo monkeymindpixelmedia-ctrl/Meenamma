@@ -56,30 +56,58 @@ def require_razorpay_config() -> str:
     return key_id
 
 
+def sync_profile_identity(user_id: str, email: str) -> dict:
+    """Ensure the user's active SuperTokens user_id is the primary key in public.profiles.
+
+    If a profile exists under a different legacy ID for the same email (e.g. from an earlier
+    auth migration or login method), migrate its ID and child records to match user_id.
+    """
+    email = email.lower().strip()
+    by_id = sb.table("profiles").select("*, staff_role_assignments!profile_id(role, revoked_at)").eq("id", user_id).execute().data
+    if by_id:
+        p = by_id[0]
+        if p.get("email") != email:
+            sb.table("profiles").update({"email": email}).eq("id", user_id).execute()
+            p["email"] = email
+        return p
+
+    by_email = sb.table("profiles").select("*, staff_role_assignments!profile_id(role, revoked_at)").eq("email", email).execute().data
+    if by_email:
+        old_p = by_email[0]
+        old_id = old_p["id"]
+        sb.table("profiles").update({"email": f"temp_{old_id}@temp.local"}).eq("id", old_id).execute()
+        new_data = {**old_p, "id": user_id, "email": email}
+        new_data.pop("staff_role_assignments", None)
+        sb.table("profiles").insert(new_data).execute()
+        for tbl in ["kudams", "orders", "kudam_payment_attempts", "autopay_accruals", "reservations", "staff_role_assignments", "preferences"]:
+            try:
+                sb.table(tbl).update({"profile_id": user_id}).eq("profile_id", old_id).execute()
+            except Exception:
+                pass
+        try:
+            sb.table("staff_role_assignments").update({"granted_by": user_id}).eq("granted_by", old_id).execute()
+        except Exception:
+            pass
+        sb.table("profiles").delete().eq("id", old_id).execute()
+        res = sb.table("profiles").select("*, staff_role_assignments!profile_id(role, revoked_at)").eq("id", user_id).execute().data
+        return res[0] if res else {**old_p, "id": user_id, "email": email}
+
+    sb.table("profiles").insert({"id": user_id, "email": email}).execute()
+    new_res = sb.table("profiles").select("*, staff_role_assignments!profile_id(role, revoked_at)").eq("id", user_id).execute().data
+    return new_res[0] if new_res else {"id": user_id, "email": email}
+
+
 # ---------- Auth ----------
 async def get_current_user(auth_session: SessionContainer = Depends(verified_session)) -> dict:
     user_id, email = await session_identity(auth_session)
-    rows = (sb.table("profiles")
-            .select("*, staff_role_assignments!profile_id(role, revoked_at)")
-            .eq("id", user_id).execute().data)
-    if not rows:
-        # Fallback: same email may exist under a different auth provider (e.g. Google OAuth).
-        # Use that profile rather than creating a duplicate that would violate the email unique constraint.
-        rows = (sb.table("profiles")
-                .select("*, staff_role_assignments!profile_id(role, revoked_at)")
-                .eq("email", email).execute().data)
-    if not rows:
-        sb.table("profiles").insert({"id": user_id, "email": email}).execute()
-        rows = (sb.table("profiles")
-                .select("*, staff_role_assignments!profile_id(role, revoked_at)")
-                .eq("id", user_id).execute().data)
-    p = rows[0]
-    if p.get("email") != email:
-        sb.table("profiles").update({"email": email}).eq("id", p["id"]).execute()
-        p["email"] = email
+    p = sync_profile_identity(user_id, email)
     roles = [r["role"] for r in (p.get("staff_role_assignments") or []) if not r.get("revoked_at")]
     p["_role"] = "admin" if "ops_admin" in roles else "user"
     retire_legacy_autopay(p)
+
+    ref_count_res = sb.table("profiles").select("id", count="exact").eq("referred_by", p["id"]).execute()
+    p["referral_count"] = getattr(ref_count_res, "count", 0)
+
     return p
 
 
@@ -113,13 +141,17 @@ def get_admin_user(user: dict = Depends(get_current_user)) -> dict:
 
 
 def user_public(p: dict) -> dict:
+    step_paise = p.get("step_paise") or 0
     return {"id": p["id"], "email": p.get("email") or "", "name": p.get("display_name") or "",
             "role": p.get("_role", "user"), "daily_plan": p.get("daily_plan") or 5,
             "pincode": p.get("pincode") or "", "upi_id": p.get("upi_id") or "",
             "autopay_status": p.get("autopay_status") or "none", "locale": p.get("locale") or "en",
             "autopay_cadence": p.get("autopay_cadence") or "manual",
-            "step_amount": round((p.get("step_paise") or 0) / 100),
-            "legacy_autopay_retired": bool(p.get("legacy_autopay_retired"))}
+            "step_amount": round(step_paise / 100) if step_paise else 0,
+            "step_paise": step_paise,
+            "legacy_autopay_retired": bool(p.get("legacy_autopay_retired")),
+            "referral_code": p.get("referral_code"),
+            "referral_count": p.get("referral_count", 0)}
 
 
 @api.get("/config/auth")
@@ -138,22 +170,33 @@ class ProfileIn(BaseModel):
     pincode: Optional[str] = None
     upi_id: Optional[str] = None
     locale: Optional[str] = None
+    referred_by_code: Optional[str] = None
+    cadence: Optional[str] = None
 
 
 def profile_updates(body: ProfileIn) -> dict:
     upd = {}
-    if body.name:
-        upd["display_name"] = body.name
-    if body.daily_plan in (1, 5, 10):
-        upd["daily_plan"] = body.daily_plan
-    if body.pincode is not None:
-        upd["pincode"] = body.pincode
-    if body.upi_id is not None:
-        upd["upi_id"] = body.upi_id
-    if body.locale is not None:
-        if body.locale not in ("en", "ta"):
+    name = getattr(body, "name", None)
+    if name:
+        upd["display_name"] = name
+    daily_plan = getattr(body, "daily_plan", None)
+    if daily_plan is not None and 1 <= daily_plan <= 100:
+        upd["daily_plan"] = daily_plan
+        upd["step_paise"] = daily_plan * 100
+    cadence = getattr(body, "cadence", None)
+    if cadence in ("daily", "weekly", "monthly", "manual"):
+        upd["autopay_cadence"] = cadence
+    pincode = getattr(body, "pincode", None)
+    if pincode is not None:
+        upd["pincode"] = pincode
+    upi_id = getattr(body, "upi_id", None)
+    if upi_id is not None:
+        upd["upi_id"] = upi_id
+    locale = getattr(body, "locale", None)
+    if locale is not None:
+        if locale not in ("en", "ta"):
             raise HTTPException(status_code=400, detail="locale must be 'en' or 'ta'")
-        upd["locale"] = body.locale
+        upd["locale"] = locale
     return upd
 
 
@@ -161,6 +204,7 @@ def profile_updates(body: ProfileIn) -> dict:
 async def bootstrap_profile(body: ProfileIn,
                             auth_session: SessionContainer = Depends(bootstrap_session)):
     user_id, email = await session_identity(auth_session)
+    email = email.lower().strip()
     upd = {**profile_updates(body), "email": email}
     is_new = False
 
@@ -176,6 +220,21 @@ async def bootstrap_profile(body: ProfileIn,
             profile_id = by_email[0]["id"]
             sb.table("profiles").update(upd).eq("id", profile_id).execute()
         else:
+            # Generate referral_code
+            import re
+            import uuid
+            base_name = re.sub(r'[^a-zA-Z0-9]', '', upd.get("display_name", "USER"))[:4].upper()
+            if not base_name: base_name = "USER"
+            short_id = str(user_id).replace("-", "")[:4].upper()
+            upd["referral_code"] = f"{base_name}{short_id}"
+            
+            # Resolve referred_by if code was provided
+            referred_by_code = getattr(body, "referred_by_code", None)
+            if referred_by_code:
+                referrer = sb.table("profiles").select("id").eq("referral_code", referred_by_code.upper()).execute().data
+                if referrer:
+                    upd["referred_by"] = referrer[0]["id"]
+
             sb.table("profiles").insert({"id": user_id, **upd}).execute()
             profile_id = user_id
             is_new = True
@@ -752,7 +811,7 @@ async def razorpay_webhook(request: Request):
 # plan.item.amount * quantity and we vary the quantity. See api/ladder.py for the math.
 class AutopaySubscribeIn(BaseModel):
     step_amount: int = Field(gt=0, le=100)
-    cadence: Literal["weekly", "monthly", "manual"]
+    cadence: Literal["daily", "weekly", "monthly", "manual"]
 
 
 class AutopayVerifyIn(BaseModel):
@@ -763,10 +822,10 @@ class AutopayVerifyIn(BaseModel):
 
 # Razorpay's own billing period per cadence. Only the sweep frequency differs; the amount is
 # always carried by the quantity.
-_CADENCE_PERIOD = {"weekly": "weekly", "monthly": "monthly"}
+_CADENCE_PERIOD = {"daily": "daily", "weekly": "weekly", "monthly": "monthly"}
 
 # Long enough that a subscription outlives the ladder rather than expiring mid-cycle.
-_TOTAL_COUNT = {"weekly": 52, "monthly": 12}
+_TOTAL_COUNT = {"daily": 365, "weekly": 52, "monthly": 12}
 
 
 def shared_plan_id(cadence: str, key_id: str) -> str:

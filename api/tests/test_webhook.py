@@ -11,14 +11,18 @@ import os
 from types import SimpleNamespace
 import requests
 import pytest
+from pathlib import Path
 from dotenv import load_dotenv
 
+_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(_ROOT / ".env.local")
+load_dotenv(_ROOT / ".env")
 load_dotenv("/app/frontend/.env")
 
-BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
+BASE_URL = os.getenv("REACT_APP_BACKEND_URL", os.getenv("NEXT_PUBLIC_APP_URL", "http://localhost:8000")).rstrip("/")
 API = f"{BASE_URL}/api"
-SUPABASE_URL = os.environ["REACT_APP_SUPABASE_URL"].rstrip("/")
-SUPABASE_ANON = os.environ["REACT_APP_SUPABASE_ANON_KEY"]
+SUPABASE_URL = os.getenv("REACT_APP_SUPABASE_URL", os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")).rstrip("/")
+SUPABASE_ANON = os.getenv("REACT_APP_SUPABASE_ANON_KEY", os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY", ""))
 WEBHOOK_SECRET = "test_webhook_secret"
 
 DEMO_EMAIL = "demo@meenamma.in"

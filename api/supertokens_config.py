@@ -15,19 +15,31 @@ from api.auth_email import password_reset_email_delivery, verification_email_del
 
 API_BASE_PATH = "/api/auth"
 
-app_url_env = os.environ.get("APP_URL") or os.environ.get("NEXT_PUBLIC_APP_URL")
-api_url_env = os.environ.get("API_URL") or os.environ.get("NEXT_PUBLIC_BACKEND_URL")
+app_url_env = (
+    os.environ.get("WEBSITE_DOMAIN")
+    or os.environ.get("APP_URL")
+    or os.environ.get("NEXT_PUBLIC_APP_URL")
+)
+api_url_env = (
+    os.environ.get("API_DOMAIN")
+    or os.environ.get("API_URL")
+    or os.environ.get("NEXT_PUBLIC_BACKEND_URL")
+)
 vercel_url = os.environ.get("VERCEL_URL")
 
-if app_url_env and "localhost" not in app_url_env:
+if app_url_env:
     APP_URL = app_url_env
+elif vercel_url:
+    APP_URL = f"https://{vercel_url}"
 else:
-    APP_URL = f"https://{vercel_url}" if vercel_url else "https://meenamma.org"
+    APP_URL = "http://localhost:3000"
 
-if api_url_env and "localhost" not in api_url_env:
+if api_url_env:
     API_URL = api_url_env
+elif vercel_url:
+    API_URL = f"https://{vercel_url}"
 else:
-    API_URL = f"https://{vercel_url}" if vercel_url else "http://localhost:8000"
+    API_URL = APP_URL
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
@@ -47,7 +59,7 @@ if GOOGLE_ENABLED:
     recipe_list.append(thirdparty.init(
         sign_in_and_up_feature=thirdparty.SignInAndUpFeature(providers=[google])))
 recipe_list.extend([
-    emailverification.init(mode="OPTIONAL", email_delivery=verification_email_delivery()),
+    emailverification.init(mode="REQUIRED", email_delivery=verification_email_delivery()),
     session.init(),
     dashboard.init(),
 ])
@@ -80,7 +92,18 @@ bootstrap_session = verify_session(override_global_claim_validators=_ignore_emai
 
 
 async def session_identity(auth_session: SessionContainer) -> tuple[str, str]:
-    user = await get_user(auth_session.get_user_id())
-    if user is None or not user.emails:
+    user_id = auth_session.get_user_id()
+    user = await get_user(user_id)
+    if user is None:
         raise HTTPException(status_code=401, detail="SuperTokens user not found")
-    return user.id, user.emails[0]
+    email = None
+    if user.emails:
+        email = user.emails[0]
+    elif hasattr(user, "login_methods") and user.login_methods:
+        for lm in user.login_methods:
+            if getattr(lm, "email", None):
+                email = lm.email
+                break
+    if not email:
+        raise HTTPException(status_code=401, detail="SuperTokens user email not found")
+    return user.id, email

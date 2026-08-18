@@ -54,6 +54,8 @@ export function AuthProvider({ children }) {
       daily_plan,
       pincode: extra.pincode || "",
       upi_id: extra.upi_id || "",
+      cadence: extra.cadence || "weekly",
+      referred_by_code: extra.referred_by_code,
     });
     const isVerified = await EmailVerification.isEmailVerified();
     if (!isVerified?.isVerified) {
