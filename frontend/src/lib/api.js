@@ -1,12 +1,20 @@
 import axios from "axios";
-import Session from "supertokens-auth-react/recipe/session";
+import { supabase } from "./supabase";
 
 export const api = axios.create({
   baseURL: process.env.REACT_APP_API_URL || "/api",
   withCredentials: true,
 });
 
-Session.addAxiosInterceptors(api);
+api.interceptors.request.use(async (config) => {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 export const imgUrl = (path) => {
   if (!path) return "";

@@ -3,7 +3,11 @@
 # backend and the pytest suite expect, and points tests at a locally-started API.
 # Usage: `source scripts/env.sh` from the repo root (Meenamma/).
 set -a
-ENV_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.env"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="${MEENAMMA_ENV_FILE:-$REPO_ROOT/.env.local}"
+if [ ! -f "$ENV_FILE" ]; then
+  ENV_FILE="$REPO_ROOT/.env"
+fi
 while IFS='=' read -r k v; do
   v="${v%$'\r'}"   # strip CR (Windows .env line endings)
   case "$k" in

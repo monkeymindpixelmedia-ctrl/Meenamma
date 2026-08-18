@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Eye, EyeOff } from "lucide-react";
-import { redirectToThirdPartyLogin } from "supertokens-auth-react/recipe/thirdparty";
 import { useAuth } from "../context/AuthContext";
 import { api, formatApiErrorDetail, haptic } from "../lib/api";
 
@@ -18,7 +17,7 @@ function FiligreeLogo() {
 }
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -56,7 +55,7 @@ export default function Login() {
     }
   };
 
-  const loginWithGoogle = async () => {
+  const doGoogleLogin = async () => {
     if (googleEnabled !== true) {
       if (googleEnabled === false) setError("Google sign-in is not configured.");
       return;
@@ -65,8 +64,7 @@ export default function Login() {
     setBusy(true);
     setError("");
     try {
-      const response = await redirectToThirdPartyLogin({ thirdPartyId: "google" });
-      if (response.status !== "OK") throw new Error("Google sign-in is not available right now.");
+      await loginWithGoogle();
     } catch (err) {
       setError(err.message || "Could not start Google sign-in.");
       setBusy(false);
@@ -137,7 +135,7 @@ export default function Login() {
           type="button"
           className="w-full flex items-center justify-center gap-3 border border-gold/60 bg-white py-3.5 text-obsidian text-xs uppercase hover:bg-gold/10 transition-colors duration-300"
           style={{ letterSpacing: "0.18em" }}
-          onClick={loginWithGoogle}
+          onClick={doGoogleLogin}
           disabled={busy || googleEnabled !== true}
           data-testid="google-login-btn"
         >

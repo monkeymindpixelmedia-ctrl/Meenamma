@@ -1,11 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import {
-  getEmailVerificationTokenFromURL,
-  sendVerificationEmail,
-  verifyEmail,
-} from "supertokens-auth-react/recipe/emailverification";
-import Session from "supertokens-auth-react/recipe/session";
+import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 
 export default function VerifyEmail() {
@@ -22,32 +17,29 @@ export default function VerifyEmail() {
 
     const prepareVerification = async () => {
       try {
-        if (!(await Session.doesSessionExist())) {
-          setStatus("signed-out");
-          setMessage("Please sign in again before verifying your email.");
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        if (!sessionData.session) {
+          const pendingEmail = localStorage.getItem("meenamma_pending_email");
+          setStatus(pendingEmail ? "sent" : "signed-out");
+          setMessage(pendingEmail
+            ? "We sent a verification link to your email address."
+            : "Please sign in again before verifying your email.");
           return;
         }
 
-        const token = getEmailVerificationTokenFromURL();
-        if (!token) {
-          const response = await sendVerificationEmail();
-          setStatus(response.status === "EMAIL_ALREADY_VERIFIED_ERROR" ? "verified" : "sent");
-          setMessage(response.status === "EMAIL_ALREADY_VERIFIED_ERROR"
-            ? "Your email is already verified."
-            : "We sent a verification link to your email address.");
-          return;
+        const { data, error } = await supabase.auth.getUser();
+        if (error) throw error;
+        if (data.user?.email_confirmed_at) {
+          localStorage.removeItem("meenamma_pending_email");
+          setStatus("verified");
+          setMessage("Your email is verified. Taking you to your dashboard…");
+          await refreshUser(sessionData.session);
+          navigate("/dashboard", { replace: true });
+        } else {
+          setStatus("sent");
+          setMessage("We sent a verification link to your email address.");
         }
-
-        const response = await verifyEmail();
-        if (response.status === "EMAIL_VERIFICATION_INVALID_TOKEN_ERROR") {
-          setStatus("error");
-          setMessage("This verification link is invalid or has expired. Request a new link below.");
-          return;
-        }
-        setStatus("verified");
-        setMessage("Your email is verified. Taking you to your dashboard…");
-        await refreshUser();
-        navigate("/dashboard", { replace: true });
       } catch (err) {
         setStatus("error");
         setMessage(err.message || "We could not verify your email. Please try again.");
@@ -60,11 +52,18 @@ export default function VerifyEmail() {
   const resend = async () => {
     setResending(true);
     try {
-      const response = await sendVerificationEmail();
-      setStatus(response.status === "EMAIL_ALREADY_VERIFIED_ERROR" ? "verified" : "sent");
-      setMessage(response.status === "EMAIL_ALREADY_VERIFIED_ERROR"
-        ? "Your email is already verified."
-        : "A fresh verification link is on its way.");
+      const { data, error } = await supabase.auth.getUser();
+      const email = data.user?.email || localStorage.getItem("meenamma_pending_email");
+      if (error && !email) throw error;
+      if (!email) throw new Error("No email address is available.");
+      const response = await supabase.auth.resend({
+        type: "signup",
+        email,
+        options: { emailRedirectTo: `${window.location.origin}/auth/verify-email` },
+      });
+      if (response.error) throw response.error;
+      setStatus("sent");
+      setMessage("A fresh verification link is on its way.");
     } catch (err) {
       setStatus("error");
       setMessage(err.message || "We could not resend the email. Please try again.");

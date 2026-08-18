@@ -1,22 +1,20 @@
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import EmailPassword from "supertokens-auth-react/recipe/emailpassword";
-import EmailVerification from "supertokens-auth-react/recipe/emailverification";
-import Session from "supertokens-auth-react/recipe/session";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { api } from "./lib/api";
+import { supabase } from "./lib/supabase";
 
-jest.mock("supertokens-auth-react/recipe/emailpassword", () => ({
-  __esModule: true,
-  default: { signIn: jest.fn(), signUp: jest.fn() },
-}));
-jest.mock("supertokens-auth-react/recipe/emailverification", () => ({
-  __esModule: true,
-  default: { isEmailVerified: jest.fn() },
-}));
-jest.mock("supertokens-auth-react/recipe/session", () => ({
-  __esModule: true,
-  default: { doesSessionExist: jest.fn(), signOut: jest.fn() },
+jest.mock("./lib/supabase", () => ({
+  supabase: {
+    auth: {
+      getSession: jest.fn(),
+      onAuthStateChange: jest.fn(),
+      signInWithPassword: jest.fn(),
+      signInWithOAuth: jest.fn(),
+      signUp: jest.fn(),
+      signOut: jest.fn(),
+    },
+  },
 }));
 jest.mock("./lib/api", () => ({
   api: { get: jest.fn(), post: jest.fn() },
@@ -37,19 +35,20 @@ async function renderAuthProvider() {
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root.render(
-      <AuthProvider>
-        <AuthProbe />
-      </AuthProvider>
-    );
+    root.render(<AuthProvider><AuthProbe /></AuthProvider>);
   });
 }
 
-describe("AuthContext SuperTokens behavior", () => {
+describe("AuthContext Supabase behavior", () => {
+  const session = { access_token: "supabase-access-token" };
+
   beforeEach(async () => {
     jest.clearAllMocks();
-    Session.doesSessionExist.mockResolvedValue(false);
-    EmailVerification.isEmailVerified.mockResolvedValue({ isVerified: false });
+    supabase.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+    supabase.auth.onAuthStateChange.mockReturnValue({
+      data: { subscription: { unsubscribe: jest.fn() } },
+    });
+    supabase.auth.signOut.mockResolvedValue({ error: null });
     await renderAuthProvider();
   });
 
@@ -58,9 +57,10 @@ describe("AuthContext SuperTokens behavior", () => {
     document.body.innerHTML = "";
   });
 
-  test("registers through EmailPassword before bootstrapping the profile", async () => {
-    EmailPassword.signUp.mockResolvedValue({ status: "OK" });
+  test("registers with Supabase and bootstraps the application profile", async () => {
+    supabase.auth.signUp.mockResolvedValue({ data: { session }, error: null });
     api.post.mockResolvedValue({ data: {} });
+    api.get.mockResolvedValue({ data: { id: "user-1", email: "meena@example.com" } });
 
     let result;
     await act(async () => {
@@ -70,11 +70,18 @@ describe("AuthContext SuperTokens behavior", () => {
       });
     });
 
-    expect(EmailPassword.signUp).toHaveBeenCalledWith({
-      formFields: [
-        { id: "email", value: "meena@example.com" },
-        { id: "password", value: "safe-password" },
-      ],
+    expect(supabase.auth.signUp).toHaveBeenCalledWith({
+      email: "meena@example.com",
+      password: "safe-password",
+      options: {
+        emailRedirectTo: "http://localhost/auth/verify-email",
+        data: {
+          display_name: "Meena",
+          daily_plan: 10,
+          pincode: "600001",
+          upi_id: "meena@upi",
+        },
+      },
     });
     expect(api.post).toHaveBeenCalledWith("/profile/bootstrap", {
       name: "Meena",
@@ -84,46 +91,34 @@ describe("AuthContext SuperTokens behavior", () => {
       cadence: "weekly",
       referred_by_code: undefined,
     });
-    expect(EmailPassword.signUp.mock.invocationCallOrder[0]).toBeLessThan(
-      api.post.mock.invocationCallOrder[0]
-    );
-    expect(result).toEqual({ verificationRequired: true });
+    expect(result).toEqual({ id: "user-1", email: "meena@example.com" });
   });
 
-  test("returns verificationRequired when email login is not verified", async () => {
-    EmailPassword.signIn.mockResolvedValue({ status: "OK" });
-    EmailVerification.isEmailVerified.mockResolvedValue({ isVerified: false });
+  test("uses Supabase password sign-in and loads the application user", async () => {
+    supabase.auth.signInWithPassword.mockResolvedValue({ data: { session }, error: null });
+    api.get.mockResolvedValue({ data: { id: "user-1", name: "Meena" } });
 
     let result;
     await act(async () => {
       result = await currentAuth.login("meena@example.com", "safe-password");
     });
 
-    expect(result).toEqual({ verificationRequired: true });
-    expect(api.get).not.toHaveBeenCalled();
-  });
-
-  test("loads the application user after verified email login", async () => {
-    const appUser = { id: "user-1", name: "Meena" };
-    EmailPassword.signIn.mockResolvedValue({ status: "OK" });
-    EmailVerification.isEmailVerified.mockResolvedValue({ isVerified: true });
-    Session.doesSessionExist.mockResolvedValue(true);
-    api.get.mockResolvedValue({ data: appUser });
-
-    let result;
-    await act(async () => {
-      result = await currentAuth.login("meena@example.com", "safe-password");
+    expect(supabase.auth.signInWithPassword).toHaveBeenCalledWith({
+      email: "meena@example.com",
+      password: "safe-password",
     });
-
-    expect(result).toEqual(appUser);
     expect(api.get).toHaveBeenCalledWith("/auth/me");
+    expect(result).toEqual({ id: "user-1", name: "Meena" });
   });
 
-  test("does not depend on the Supabase auth client", () => {
-    const fs = require("fs");
-    const path = require("path");
-    const source = fs.readFileSync(path.join(__dirname, "context/AuthContext.js"), "utf8");
+  test("starts Google sign-in with the application callback URL", async () => {
+    supabase.auth.signInWithOAuth.mockResolvedValue({ data: {}, error: null });
 
-    expect(source).not.toMatch(/supabase/i);
+    await act(async () => currentAuth.loginWithGoogle());
+
+    expect(supabase.auth.signInWithOAuth).toHaveBeenCalledWith({
+      provider: "google",
+      options: { redirectTo: "http://localhost/auth/callback/google" },
+    });
   });
 });

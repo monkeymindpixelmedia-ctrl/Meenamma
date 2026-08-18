@@ -1,9 +1,11 @@
 jest.mock("axios", () => ({
-  create: jest.fn(() => ({ post: jest.fn() })),
+  create: jest.fn(() => ({
+    post: jest.fn(),
+    interceptors: { request: { use: jest.fn() } },
+  })),
 }));
-jest.mock("supertokens-auth-react/recipe/session", () => ({
-  __esModule: true,
-  default: { addAxiosInterceptors: jest.fn() },
+jest.mock("./lib/supabase", () => ({
+  supabase: { auth: { getSession: jest.fn().mockResolvedValue({ data: { session: null } }) } },
 }));
 
 import { api, payWithRazorpay, setupAutopay } from "./lib/api";

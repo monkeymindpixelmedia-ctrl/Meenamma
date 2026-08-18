@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { signInAndUp } from "supertokens-auth-react/recipe/thirdparty";
-import { api } from "../lib/api";
+import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 
 export default function ThirdPartyCallback() {
@@ -16,17 +15,9 @@ export default function ThirdPartyCallback() {
 
     const completeSignIn = async () => {
       try {
-        const response = await signInAndUp();
-        console.log("SuperTokens ThirdParty signInAndUp response:", response);
-        if (response.status === "NO_EMAIL_GIVEN_BY_PROVIDER") {
-          throw new Error("Google did not provide an email address for this account.");
-        }
-        if (response.status === "SIGN_IN_UP_NOT_ALLOWED") {
-          throw new Error(response.reason || "Google sign in/up is not allowed for this account.");
-        }
-        if (response.status !== "OK") {
-          throw new Error(`Google sign-in failed with status: ${response.status}`);
-        }
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        if (!data.session) throw new Error("Google sign-in did not create a session.");
 
         const route = (u) => {
           if (!u) return "/auth/verify-email";
@@ -38,10 +29,7 @@ export default function ThirdPartyCallback() {
           return onboarded ? "/dashboard" : "/register";
         };
 
-        if (response.createdNewRecipeUser) {
-          await api.post("/profile/bootstrap", { name: "Meenamma Member" });
-        }
-        const appUser = await refreshUser();
+        const appUser = await refreshUser(data.session);
         navigate(route(appUser), { replace: true });
       } catch (err) {
         console.error("Google sign-in callback error:", err);

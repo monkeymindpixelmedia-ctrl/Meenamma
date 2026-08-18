@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
-import {
-  sendPasswordResetEmail,
-  submitNewPassword,
-} from "supertokens-auth-react/recipe/emailpassword";
 import { haptic } from "../lib/api";
+import { supabase } from "../lib/supabase";
 
 function tokenFromURL() {
-  return new URLSearchParams(window.location.search).get("token") || "";
+  return new URLSearchParams(window.location.search).get("token")
+    || new URLSearchParams(window.location.hash.replace(/^#/, "?")).get("access_token")
+    || "";
 }
 
 export default function ResetPassword() {
@@ -30,14 +29,10 @@ export default function ResetPassword() {
     setError("");
     setMessage("");
     try {
-      const response = await sendPasswordResetEmail({
-        formFields: [{ id: "email", value: email }],
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
       });
-      if (response.status === "FIELD_ERROR") {
-        setError(response.formFields.map((field) => field.error).join(" "));
-        return;
-      }
-      // SuperTokens returns OK even for unknown emails so accounts cannot be enumerated.
+      if (error) throw error;
       setMessage("If that email has an account, a reset link is on its way.");
     } catch (err) {
       setError(err.message || "We could not send the reset email. Please try again.");
@@ -51,18 +46,8 @@ export default function ResetPassword() {
     setError("");
     setMessage("");
     try {
-      const response = await submitNewPassword({
-        formFields: [{ id: "password", value: password }],
-      });
-      if (response.status === "FIELD_ERROR") {
-        setError(response.formFields.map((field) => field.error).join(" "));
-        return;
-      }
-      if (response.status === "RESET_PASSWORD_INVALID_TOKEN_ERROR") {
-        setHasToken(false);
-        setError("This reset link is invalid or has expired. Request a fresh one below.");
-        return;
-      }
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
       setMessage("Your password is updated. Taking you to sign in…");
       navigate("/login", { replace: true });
     } catch (err) {

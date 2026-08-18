@@ -1,5 +1,6 @@
-from dotenv import load_dotenv
-load_dotenv()
+from api.runtime_env import load_runtime_env
+load_runtime_env()
+
 
 import os
 import re
@@ -16,9 +17,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from supabase import create_client
-from supertokens_python.recipe.session.interfaces import SessionContainer
-from api.supertokens_config import (GOOGLE_ENABLED, bootstrap_session, session_identity,
-                                    supertokens_middleware, verified_session)
+from api.supabase_auth_config import (GOOGLE_ENABLED, SupabaseSession, bootstrap_session,
+                                      session_identity, verified_session)
 from api.notify import drain_notification_outbox, queue_notification
 from api import ladder
 
@@ -57,7 +57,7 @@ def require_razorpay_config() -> str:
 
 
 def sync_profile_identity(user_id: str, email: str) -> dict:
-    """Ensure the user's active SuperTokens user_id is the primary key in public.profiles.
+    """Ensure the user's active Supabase user_id is the primary key in public.profiles.
 
     If a profile exists under a different legacy ID for the same email (e.g. from an earlier
     auth migration or login method), migrate its ID and child records to match user_id.
@@ -98,7 +98,7 @@ def sync_profile_identity(user_id: str, email: str) -> dict:
 
 
 # ---------- Auth ----------
-async def get_current_user(auth_session: SessionContainer = Depends(verified_session)) -> dict:
+async def get_current_user(auth_session: SupabaseSession = Depends(verified_session)) -> dict:
     user_id, email = await session_identity(auth_session)
     p = sync_profile_identity(user_id, email)
     roles = [r["role"] for r in (p.get("staff_role_assignments") or []) if not r.get("revoked_at")]
@@ -205,7 +205,7 @@ def profile_updates(body: ProfileIn) -> dict:
 
 @api.post("/profile/bootstrap")
 async def bootstrap_profile(body: ProfileIn,
-                            auth_session: SessionContainer = Depends(bootstrap_session)):
+                            auth_session: SupabaseSession = Depends(bootstrap_session)):
     user_id, email = await session_identity(auth_session)
     email = email.lower().strip()
     upd = {**profile_updates(body), "email": email}
@@ -1518,7 +1518,6 @@ def health():
 
 app.include_router(api)
 app.mount("/api/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
-app.add_middleware(supertokens_middleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https?://.*",
