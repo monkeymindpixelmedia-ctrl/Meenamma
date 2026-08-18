@@ -95,14 +95,15 @@ export default function Profile() {
               <div className="flex-1 bg-white/70 backdrop-blur-sm border border-gold/20 px-4 py-3 text-obsidian/80 text-xs truncate font-mono">
                 {referralLink}
               </div>
-              <button
+              <motion.button
+                whileTap={{ scale: 0.9 }}
                 onClick={copyReferral}
-                className="bg-gold text-white p-3 hover:bg-gold-dim transition-colors"
+                className="bg-gold text-white p-3 hover:bg-gold-dim transition-colors rounded-sm"
                 aria-label="Copy referral link"
               >
                 <AnimatePresence mode="wait">
                   {copied ? (
-                    <motion.div key="check" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
+                    <motion.div key="check" initial={{ scale: 0, rotate: -45 }} animate={{ scale: 1, rotate: 0 }} exit={{ scale: 0 }}>
                       <Check size={16} />
                     </motion.div>
                   ) : (
@@ -111,30 +112,32 @@ export default function Profile() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </button>
+              </motion.button>
             </div>
             
             <div className="mt-5 flex items-end justify-between border-t border-gold/20 pt-4">
               <span className="text-obsidian/60 text-[10px] uppercase tracking-widest">Total Referred</span>
               <span className="font-serif text-obsidian text-2xl leading-none">{user?.referral_count || 0}</span>
             </div>
-            <Link
-              to="/referral"
-              className="mt-4 w-full flex items-center justify-center gap-2 py-3 text-obsidian text-[10px] uppercase tracking-[0.2em] border border-gold/30 hover:bg-gold/5 transition-colors duration-300"
-              data-testid="view-referral-page-link"
-            >
-              View Referral Page
-              <ArrowRight size={12} />
-            </Link>
+            <motion.div whileTap={{ scale: 0.98 }}>
+              <Link
+                to="/referral"
+                className="mt-4 w-full flex items-center justify-center gap-2 py-3 text-obsidian text-[10px] uppercase tracking-[0.2em] border border-gold/30 hover:bg-gold/5 transition-colors duration-300"
+                data-testid="view-referral-page-link"
+              >
+                View Referral Page
+                <ArrowRight size={12} />
+              </Link>
+            </motion.div>
           </motion.div>
         )}
 
         <motion.form
           onSubmit={save}
-          className="card-white p-6 md:p-8 mt-8 space-y-6"
+          className="card-white p-6 md:p-8 mt-8 space-y-6 shadow-xl"
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
         >
           <div>
             <label className="text-obsidian/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>Name</label>
@@ -148,18 +151,19 @@ export default function Profile() {
             <label className="text-obsidian/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>Daily savings plan</label>
             <div className="flex gap-3 mt-3">
               {PLANS.map((p) => (
-                <button
+                <motion.button
                   type="button"
                   key={p}
+                  whileTap={{ scale: 0.96 }}
                   onClick={() => { haptic(); setPlan(p); }}
                   data-testid={`profile-plan-${p}`}
-                  className={`flex-1 py-3 border transition-all duration-300 ${
+                  className={`flex-1 py-3 border transition-all duration-300 rounded-sm ${
                     Number(plan) === p ? "border-gold bg-alabaster/70 shadow-[0_0_0_1px_#C5A059]" : "border-gold/30 bg-white"
                   }`}
                 >
                   <span className="num-lg text-obsidian text-xl"><span className="rupee">₹</span>{p}</span>
                   <span className="text-obsidian/60 text-[10px] block">per day</span>
-                </button>
+                </motion.button>
               ))}
             </div>
           </div>
@@ -175,30 +179,56 @@ export default function Profile() {
             <label className="text-obsidian/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>Language</label>
             <div className="flex gap-3 mt-3">
               {[["en", "English"], ["ta", "தமிழ்"]].map(([code, label]) => (
-                <button
+                <motion.button
                   type="button"
                   key={code}
+                  whileTap={{ scale: 0.96 }}
                   onClick={() => setLang(code)}
                   data-testid={`profile-lang-${code}`}
-                  className={`flex-1 py-3 border transition-all duration-300 ${
+                  className={`flex-1 py-3 border transition-all duration-300 rounded-sm ${
                     locale === code ? "border-gold bg-alabaster/70 shadow-[0_0_0_1px_#C5A059]" : "border-gold/30 bg-white"
                   }`}
                 >
                   <span className={`text-obsidian text-sm ${code === "ta" ? "tamil" : "font-serif"}`}>{label}</span>
                   <span className="text-obsidian/60 text-[10px] block mt-0.5">{code === "ta" ? "தமிழ்" : "English"}</span>
-                </button>
+                </motion.button>
               ))}
             </div>
           </div>
-          {msg && <p className="text-obsidian text-sm italic font-serif" data-testid="profile-msg">{msg}</p>}
-          <button className="btn-obsidian w-full" disabled={busy} data-testid="profile-save-btn">
+
+          <AnimatePresence>
+            {msg && (
+              <motion.p
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                className="text-obsidian text-sm italic font-serif"
+                data-testid="profile-msg"
+              >
+                {msg}
+              </motion.p>
+            )}
+          </AnimatePresence>
+
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            className="btn-obsidian w-full"
+            disabled={busy}
+            data-testid="profile-save-btn"
+          >
             {busy ? "Saving…" : "Save changes"}
-          </button>
+          </motion.button>
         </motion.form>
 
-        <button className="w-full flex items-center justify-center gap-2 mt-6 py-3 text-obsidian/70 hover:text-obsidian text-xs uppercase transition-colors" style={{ letterSpacing: "0.2em" }} onClick={doLogout} data-testid="profile-logout-btn">
+        <motion.button
+          whileTap={{ scale: 0.96 }}
+          className="w-full flex items-center justify-center gap-2 mt-6 py-3 text-obsidian/70 hover:text-obsidian text-xs uppercase transition-colors"
+          style={{ letterSpacing: "0.2em" }}
+          onClick={doLogout}
+          data-testid="profile-logout-btn"
+        >
           <LogOut size={14} /> Sign out
-        </button>
+        </motion.button>
       </div>
     </div>
   );

@@ -1,0 +1,29 @@
+{
+  "name": "meenamma-signup-tutorials",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Isolated Remotion and HyperFrames workspace for Meenamma signup tutorials.",
+  "scripts": {
+    "dev": "remotion studio src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "render:remotion": "remotion render src/index.ts SignupTutorialRemotion out/meenamma-signup-remotion.mp4 --codec=h264 --crf=18 --concurrency=1 --overwrite",
+    "render:poster": "remotion still src/index.ts SignupTutorialRemotion out/meenamma-signup-poster.png --frame=90 --overwrite",
+    "check:hyperframes": "cd hyperframes && hyperframes check --at-transitions --snapshots",
+    "render:hyperframes": "cd hyperframes && hyperframes render -o ../out/meenamma-signup-hyperframes.mp4 --quality high --strict --workers=1 --low-memory-mode",
+    "snapshot:hyperframes": "cd hyperframes && hyperframes snapshot -o snapshots --at 1.5,5,9.5,14.5,20.5 --no-end",
+    "render": "npm run typecheck && npm run render:poster && npm run render:remotion && npm run check:hyperframes && npm run render:hyperframes"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.513",
+    "@remotion/transitions": "4.0.513",
+    "hyperframes": "0.7.77",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "remotion": "4.0.513"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "typescript": "5.9.3"
+  }
+}

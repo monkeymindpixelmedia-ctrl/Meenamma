@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <title>Meenamma signup tutorial — HyperFrames</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      :root {
+        --obsidian: #070605;
+        --panel: #120e0a;
+        --gold: #ffd700;
+        --gold-muted: #d4af37;
+        --cream: #f5f2eb;
+        --copy: #c9c0af;
+        --green: #55d492;
+        --display: Georgia, Cambria, "Times New Roman", serif;
+        --body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: var(--obsidian); }
+
+      #stage {
+        position: relative;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        color: var(--cream);
+        background:
+          radial-gradient(circle at 55% 0%, rgba(212,175,55,.17), transparent 42%),
+          radial-gradient(circle at 0% 92%, rgba(197,155,39,.09), transparent 36%),
+          linear-gradient(145deg, #070605, #0d0a07 58%, #070605);
+      }
+
+      #stage::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        opacity: .12;
+        background-image:
+          linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+        background-size: 72px 72px;
+      }
+
+      #stage::after {
+        content: "";
+        position: absolute;
+        width: 900px;
+        height: 900px;
+        right: -520px;
+        bottom: -320px;
+        border: 1px solid rgba(255,215,0,.13);
+        border-radius: 50%;
+        box-shadow: 0 0 0 110px rgba(255,215,0,.018), 0 0 0 220px rgba(255,215,0,.012);
+      }
+
+      .clip {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        padding: 96px 78px 86px;
+      }
+
+      .brand { display: flex; align-items: center; gap: 24px; }
+      .brand img { width: 106px; height: 106px; border-radius: 24px; border: 1px solid rgba(255,215,0,.28); box-shadow: 0 0 38px rgba(255,215,0,.14); }
+      .brand-name { font: 500 48px/1 var(--display); letter-spacing: .08em; }
+      .brand-sub { margin-top: 8px; color: var(--gold); font: 800 13px/1 var(--mono); letter-spacing: .28em; }
+      .eyebrow { color: var(--gold); font: 800 17px/1 var(--mono); letter-spacing: .25em; text-transform: uppercase; }
+      h1, h2 { margin: 0; font-family: var(--display); font-weight: 500; letter-spacing: -.035em; }
+      h1 { font-size: 114px; line-height: .98; }
+      h2 { font-size: 90px; line-height: 1.02; }
+      p { margin: 0; color: var(--copy); font: 400 28px/1.55 var(--body); }
+
+      .intro-copy { position: absolute; left: 78px; right: 78px; top: 510px; }
+      .intro-rule { width: 310px; height: 2px; margin: 54px 0 42px; background: linear-gradient(90deg, var(--gold), transparent); }
+      .intro-copy p { max-width: 830px; margin-top: 38px; }
+      .scroll-cue { position: absolute; left: 78px; bottom: 100px; display: flex; align-items: center; gap: 18px; color: rgba(245,242,235,.55); font: 700 15px/1 var(--mono); letter-spacing: .18em; }
+      .scroll-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 24px rgba(255,215,0,.6); }
+
+      .step-head { margin-top: 76px; }
+      .step-number { display: inline-grid; place-items: center; width: 62px; height: 62px; border-radius: 50%; margin-bottom: 32px; color: var(--obsidian); background: var(--gold); font: 900 21px/1 var(--mono); }
+      .step-head h2 { margin-top: 20px; }
+      .step-head p { margin-top: 26px; max-width: 850px; }
+
+      .phone {
+        position: absolute;
+        left: 105px;
+        right: 105px;
+        bottom: 104px;
+        min-height: 650px;
+        padding: 52px 48px;
+        border-radius: 34px;
+        background: rgba(18,14,10,.93);
+        border: 1px solid rgba(212,175,55,.28);
+        box-shadow: 0 45px 100px rgba(0,0,0,.55), inset 0 1px rgba(255,215,0,.12);
+      }
+      .phone-title { text-align: center; margin-bottom: 34px; font: 500 35px/1 var(--display); letter-spacing: .09em; }
+      .tabs { display: flex; margin-bottom: 36px; border-bottom: 1px solid rgba(212,175,55,.18); }
+      .tab { width: 50%; padding: 15px; text-align: center; color: rgba(245,242,235,.62); font: 800 13px/1 var(--mono); letter-spacing: .14em; }
+      .tab.active { color: var(--gold); border-bottom: 3px solid var(--gold); }
+      .button { height: 66px; display: grid; place-items: center; border-radius: 10px; color: var(--obsidian); background: linear-gradient(135deg,#ffd700,#c59b27); font: 900 14px/1 var(--mono); letter-spacing: .2em; text-transform: uppercase; box-shadow: 0 10px 34px rgba(255,215,0,.18); }
+      .button.secondary { color: var(--cream); background: rgba(255,255,255,.035); border: 1px solid rgba(212,175,55,.3); box-shadow: none; }
+      .or { display: flex; align-items: center; gap: 18px; margin: 25px 0; color: rgba(212,175,55,.82); font: 800 11px/1 var(--mono); }
+      .or::before, .or::after { content: ""; height: 1px; flex: 1; background: rgba(212,175,55,.2); }
+      .fields { display: grid; gap: 21px; }
+      .field-label { display: flex; justify-content: space-between; margin-bottom: 10px; color: rgba(245,242,235,.62); font: 800 12px/1 var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+      .optional { color: rgba(212,175,55,.82); }
+      .field-box { height: 61px; padding: 0 20px; display: flex; align-items: center; border-radius: 10px; color: var(--cream); background: rgba(7,6,5,.75); border: 1px solid rgba(212,175,55,.2); font: 400 18px/1 var(--body); }
+      .field-box.active { border-color: var(--gold); box-shadow: 0 0 22px rgba(255,215,0,.16); }
+      .submit-row { margin-top: 28px; }
+
+      .verify { padding-top: 40px; text-align: center; }
+      .verify-icon { width: 142px; height: 142px; margin: 0 auto 38px; display: grid; place-items: center; border-radius: 50%; border: 1px solid rgba(255,215,0,.38); color: var(--gold); background: rgba(255,215,0,.07); box-shadow: 0 0 48px rgba(255,215,0,.16); font: 500 60px/1 var(--display); }
+      .verify h3 { margin: 0; color: var(--cream); font: 500 52px/1.1 var(--display); }
+      .verify p { margin: 24px auto 38px; max-width: 670px; font-size: 22px; }
+
+      .dashboard-welcome { display: flex; align-items: center; justify-content: space-between; }
+      .dashboard-label { color: var(--gold); font: 800 12px/1 var(--mono); letter-spacing: .16em; }
+      .dashboard-title { margin-top: 9px; font: 500 38px/1 var(--display); }
+      .avatar { width: 66px; height: 66px; display: grid; place-items: center; border-radius: 50%; color: var(--obsidian); background: var(--gold); font: 500 29px/1 var(--display); }
+      .saving { margin-top: 34px; padding: 34px; border-radius: 18px; border: 1px solid rgba(212,175,55,.24); background: rgba(255,215,0,.04); }
+      .saving-top { display: flex; justify-content: space-between; align-items: flex-end; }
+      .saving-copy { color: var(--copy); font: 800 11px/1 var(--mono); letter-spacing: .16em; }
+      .saving-value { margin-top: 14px; font: 500 72px/1 var(--display); }
+      .protected { color: var(--green); font: 800 12px/1 var(--mono); }
+      .progress { height: 9px; margin-top: 27px; overflow: hidden; border-radius: 9px; background: rgba(255,255,255,.08); }
+      .progress > div { width: 74%; height: 100%; border-radius: 9px; background: linear-gradient(90deg,#8f6d18,#ffd700); }
+      .dashboard-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 17px; }
+      .dashboard-action { padding: 22px; border: 1px solid rgba(212,175,55,.16); border-radius: 13px; color: var(--copy); font: 400 17px/1 var(--body); }
+      .dashboard-action span { float: right; color: var(--gold); }
+
+      .final-cta { position: absolute; left: 78px; right: 78px; bottom: 120px; }
+      .final-cta h2 { margin-top: 30px; font-size: 101px; }
+      .final-button { display: inline-grid; place-items: center; height: 76px; margin-top: 42px; padding: 0 38px; border-radius: 12px; color: var(--obsidian); background: linear-gradient(135deg,#ffd700,#c59b27); font: 900 16px/1 var(--mono); letter-spacing: .2em; }
+      .url { margin-top: 28px; color: var(--copy); font: 400 21px/1 var(--body); }
+    </style>
+  </head>
+  <body>
+    <main id="stage" data-composition-id="meenamma-signup-vertical" data-start="0" data-duration="24" data-width="1080" data-height="1920" data-fps="30">
+      <section id="intro" class="clip" data-start="0" data-duration="3" data-track-index="0">
+        <div class="brand intro-brand">
+          <img src="./assets/logo.png" alt="" />
+          <div><div class="brand-name">MEENAMMA</div><div class="brand-sub">MICRO-SAVINGS</div></div>
+        </div>
+        <div class="intro-copy">
+          <div class="eyebrow">24-second signup guide</div>
+          <div class="intro-rule"></div>
+          <h1>Create your account.</h1>
+          <p>Email or Google. Four simple steps. Your Daily Kudam stays protected until you sign in.</p>
+        </div>
+        <div class="scroll-cue"><span class="scroll-dot"></span>FOLLOW THE FOUR STEPS</div>
+      </section>
+
+      <section id="choice" class="clip" data-start="3" data-duration="5" data-track-index="1">
+        <div class="eyebrow">Step 1 · Start here</div>
+        <div class="step-head"><div class="step-number">1</div><h2>Choose how to sign up.</h2><p>Use email and password, or continue securely with Google.</p></div>
+        <div class="phone choice-phone">
+          <div class="phone-title">MEENAMMA</div>
+          <div class="tabs"><div class="tab">SIGN IN</div><div class="tab active">SIGN UP</div></div>
+          <div class="button">Sign up with email</div>
+          <div class="or">OR</div>
+          <div class="button secondary">Continue with Google</div>
+        </div>
+      </section>
+
+      <section id="details" class="clip" data-start="8" data-duration="6" data-track-index="2">
+        <div class="eyebrow">Step 2 · Your details</div>
+        <div class="step-head"><div class="step-number">2</div><h2>Fill the short form.</h2><p>Add your name, email and a secure password. PIN code is optional.</p></div>
+        <div class="phone details-phone">
+          <div class="fields">
+            <div><div class="field-label"><span>Full name</span></div><div class="field-box">Meena Kumar</div></div>
+            <div><div class="field-label"><span>Email address</span></div><div class="field-box">meena@example.com</div></div>
+            <div><div class="field-label"><span>Password</span></div><div class="field-box active">••••••••••</div></div>
+            <div><div class="field-label"><span>Postal PIN code</span><span class="optional">Optional</span></div><div class="field-box">600001</div></div>
+          </div>
+          <div class="submit-row button">Create account →</div>
+        </div>
+      </section>
+
+      <section id="verify" class="clip" data-start="14" data-duration="5" data-track-index="3">
+        <div class="eyebrow">Step 3 · Secure access</div>
+        <div class="step-head"><div class="step-number">3</div><h2>Verify and return.</h2><p>Confirm your email when requested. Google returns automatically.</p></div>
+        <div class="phone verify-phone"><div class="verify"><div class="verify-icon">✓</div><h3>Check your email</h3><p>Your account and referral stay connected through verification.</p><div class="button">Open Meenamma</div></div></div>
+      </section>
+
+      <section id="dashboard" class="clip" data-start="19" data-duration="5" data-track-index="4">
+        <div class="eyebrow">Step 4 · You are ready</div>
+        <div class="step-head"><div class="step-number">4</div><h2>Enter your dashboard.</h2><p>After login, your protected dashboard and Daily Kudam become available.</p></div>
+        <div class="phone dashboard-phone">
+          <div class="dashboard-welcome"><div><div class="dashboard-label">DAILY KUDAM</div><div class="dashboard-title">Welcome, Meena</div></div><div class="avatar">M</div></div>
+          <div class="saving"><div class="saving-top"><div><div class="saving-copy">TODAY'S SAVING</div><div class="saving-value">₹5</div></div><div class="protected">PROTECTED ✓</div></div><div class="progress"><div></div></div></div>
+          <div class="dashboard-actions"><div class="dashboard-action">Fresh catch <span>→</span></div><div class="dashboard-action">Referral link <span>→</span></div></div>
+        </div>
+        <div class="final-cta"><div class="eyebrow">Ready when you are</div><h2>Sign up. Sign in. Start saving.</h2><div class="final-button">CREATE YOUR ACCOUNT →</div><div class="url">meenamma.org/register</div></div>
+      </section>
+    </main>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const timeline = gsap.timeline({ paused: true });
+
+      timeline.fromTo('.intro-brand', { y: 34, opacity: 0 }, { y: 0, opacity: 1, duration: .65, ease: 'power3.out' }, .15);
+      timeline.fromTo('.intro-copy', { y: 55, opacity: 0 }, { y: 0, opacity: 1, duration: .7, ease: 'power3.out' }, .48);
+      timeline.fromTo('.scroll-cue', { opacity: 0 }, { opacity: 1, duration: .4, ease: 'none' }, 1.4);
+
+      timeline.fromTo('#choice .step-head', { x: -38, opacity: 0 }, { x: 0, opacity: 1, duration: .6, ease: 'power3.out' }, 3.2);
+      timeline.fromTo('.choice-phone', { y: 70, opacity: 0, scale: .97 }, { y: 0, opacity: 1, scale: 1, duration: .7, ease: 'power3.out' }, 3.45);
+
+      timeline.fromTo('#details .step-head', { x: -38, opacity: 0 }, { x: 0, opacity: 1, duration: .6, ease: 'power3.out' }, 8.2);
+      timeline.fromTo('.details-phone', { y: 70, opacity: 0, scale: .97 }, { y: 0, opacity: 1, scale: 1, duration: .7, ease: 'power3.out' }, 8.45);
+      timeline.fromTo('.details-phone .field-box.active', { boxShadow: '0 0 0 rgba(255,215,0,0)' }, { boxShadow: '0 0 34px rgba(255,215,0,.28)', duration: .65, repeat: 1, yoyo: true, ease: 'sine.inOut' }, 10.1);
+
+      timeline.fromTo('#verify .step-head', { x: -38, opacity: 0 }, { x: 0, opacity: 1, duration: .6, ease: 'power3.out' }, 14.2);
+      timeline.fromTo('.verify-phone', { y: 70, opacity: 0, scale: .97 }, { y: 0, opacity: 1, scale: 1, duration: .7, ease: 'power3.out' }, 14.45);
+      timeline.fromTo('.verify-icon', { scale: .65, opacity: 0 }, { scale: 1, opacity: 1, duration: .55, ease: 'back.out(1.5)' }, 15.05);
+
+      timeline.fromTo('#dashboard .step-head', { x: -38, opacity: 0 }, { x: 0, opacity: 1, duration: .6, ease: 'power3.out' }, 19.15);
+      timeline.fromTo('.dashboard-phone', { y: 70, opacity: 0, scale: .97 }, { y: 0, opacity: 1, scale: 1, duration: .7, ease: 'power3.out' }, 19.4);
+      timeline.fromTo('.progress > div', { width: '32%' }, { width: '74%', duration: 1.2, ease: 'power2.out' }, 20.2);
+      timeline.to('#dashboard .step-head, .dashboard-phone', { y: -28, opacity: 0, duration: .35, ease: 'power2.in' }, 21.92);
+      timeline.set('#dashboard .step-head, .dashboard-phone', { visibility: 'hidden' }, 22.28);
+      timeline.fromTo('.final-cta', { y: 55, opacity: 0 }, { y: 0, opacity: 1, duration: .7, ease: 'power3.out' }, 22.35);
+
+      window.__timelines['meenamma-signup-vertical'] = timeline;
+    </script>
+  </body>
+</html>

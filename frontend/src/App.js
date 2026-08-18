@@ -38,28 +38,31 @@ function AdminOnly({ children }) {
   return children;
 }
 
-const NAV_PAGES = ["/home", "/dashboard", "/market", "/admin", "/profile"];
+const AUTH_PAGES = [
+  "/",
+  "/login",
+  "/register",
+  "/auth/callback/google",
+  "/auth/verify-email",
+  "/auth/reset-password",
+];
 
 function Shell() {
   const location = useLocation();
   const { user } = useAuth();
+
   React.useEffect(() => {
     const params = new URLSearchParams(location.search);
     const ref = params.get("ref");
     if (ref) localStorage.setItem("meenamma_ref", ref);
   }, [location]);
 
-  const showChrome = NAV_PAGES.includes(location.pathname) && Boolean(user);
-  const isAuthPage = [
-    "/login",
-    "/register",
-    "/auth/callback/google",
-    "/auth/verify-email",
-    "/auth/reset-password",
-  ].includes(location.pathname);
+  const isAuthPage = AUTH_PAGES.includes(location.pathname);
+  const showHeader = !isAuthPage;
+
   return (
     <div className="w-full min-h-screen bg-alabaster-paper flex flex-col">
-      {showChrome && <Header />}
+      {showHeader && <Header />}
       <div className="flex-grow overflow-hidden relative">
         <AnimatePresence mode="wait">
           <motion.div
@@ -119,7 +122,7 @@ function Shell() {
           </motion.div>
         </AnimatePresence>
       </div>
-      {showChrome && <BottomNav />}
+      {Boolean(user) && showHeader && <BottomNav />}
       {!isAuthPage && <Footer />}
     </div>
   );

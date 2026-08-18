@@ -1,0 +1,45 @@
+{
+  "version": "2026.08.1",
+  "title": "Create your Meenamma account",
+  "locale": "en-IN",
+  "steps": [
+    {
+      "number": 1,
+      "eyebrow": "Start here",
+      "title": "Open Sign Up",
+      "description": "Create a new account with email and password, or continue with Google."
+    },
+    {
+      "number": 2,
+      "eyebrow": "Your details",
+      "title": "Fill the short form",
+      "description": "Add your name, email and a secure password. Your six-digit PIN code is optional."
+    },
+    {
+      "number": 3,
+      "eyebrow": "Secure access",
+      "title": "Verify and return",
+      "description": "Confirm your email when requested. Google sign-up returns you securely to Meenamma."
+    },
+    {
+      "number": 4,
+      "eyebrow": "You are ready",
+      "title": "Enter your dashboard",
+      "description": "After login, your protected dashboard and Daily Kudam become available."
+    }
+  ],
+  "outputs": [
+    {
+      "renderer": "remotion",
+      "compositionId": "SignupTutorialRemotion",
+      "file": "meenamma-signup-remotion.mp4",
+      "aspectRatio": "16:9"
+    },
+    {
+      "renderer": "hyperframes",
+      "compositionId": "meenamma-signup-vertical",
+      "file": "meenamma-signup-hyperframes.mp4",
+      "aspectRatio": "9:16"
+    }
+  ]
+}

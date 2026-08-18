@@ -255,13 +255,14 @@ export default function Market() {
                 {/* Buy / Reserve CTA */}
                 <div className="p-6">
                   <div className="h-[0.5px] bg-[#C5A059]/20 w-full mb-6"></div>
-                  <button
+                  <motion.button
+                    whileTap={{ scale: 0.96 }}
                     className={`w-full ${p.available ? "btn-obsidian" : "btn-gold-outline"}`}
                     onClick={() => { haptic(); setSelected(p); setMode(p.available ? "book" : "reserve"); setMsg(""); }}
                     data-testid={p.available ? `book-btn-${p.name.toLowerCase()}` : `reserve-btn-${p.name.toLowerCase()}`}
                   >
                     {p.available ? "Pre-Book" : "Reserve with 25%"}
-                  </button>
+                  </motion.button>
                 </div>
               </motion.article>
             ))
@@ -381,14 +382,15 @@ export default function Market() {
                 </div>
               </div>
               
-              <button
+              <motion.button
+                whileTap={{ scale: 0.97 }}
                 className={`w-full mt-8 ${mode === "reserve" ? "btn-gold-outline" : "btn-obsidian"}`}
                 onClick={() => { haptic(); mode === "reserve" ? reserve(selected) : book(selected); }}
                 disabled={busy}
                 data-testid="confirm-book-btn"
               >
                 {busy ? "Speaking to the boat…" : mode === "reserve" ? `Reserve · Pay ₹${inr(Math.max(1, Math.round(selected.price_per_kg * qty * 0.25)))}` : "Confirm & Pay"}
-              </button>
+              </motion.button>
             </motion.div>
           </>
         )}

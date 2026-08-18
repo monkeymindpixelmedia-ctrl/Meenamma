@@ -218,8 +218,9 @@ export default function Admin() {
 
         <div className="flex gap-1 mt-6 overflow-x-auto border-b border-gold/25">
           {TABS.map((t) => (
-            <button
+            <motion.button
               key={t}
+              whileTap={{ scale: 0.96 }}
               onClick={() => setTab(t)}
               data-testid={`admin-tab-${t.toLowerCase()}`}
               className={`px-5 py-3 text-[10px] uppercase whitespace-nowrap border-b-2 -mb-px transition-colors duration-300 ${
@@ -228,22 +229,30 @@ export default function Admin() {
               style={{ letterSpacing: "0.22em" }}
             >
               {t}
-            </button>
+            </motion.button>
           ))}
         </div>
 
         {msg && <p className="text-obsidian text-xs italic font-serif mt-4">{msg}</p>}
 
         <div className="pt-8">
-          {tab === "Overview" && stats && (
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4" data-testid="admin-stats">
-              <Stat label="Customers" value={stats.users} />
-              <Stat label="Products" value={stats.products} />
-              <Stat label="Orders" value={stats.bookings} />
-              <Stat label="Order Revenue" value={`₹${stats.booking_revenue.toLocaleString("en-IN")}`} />
-              <Stat label="Held in Kudams" value={`₹${stats.total_saved.toLocaleString("en-IN")}`} />
-            </div>
-          )}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={tab}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            >
+              {tab === "Overview" && stats && (
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4" data-testid="admin-stats">
+                  <Stat label="Customers" value={stats.users} />
+                  <Stat label="Products" value={stats.products} />
+                  <Stat label="Orders" value={stats.bookings} />
+                  <Stat label="Order Revenue" value={`₹${stats.booking_revenue.toLocaleString("en-IN")}`} />
+                  <Stat label="Held in Kudams" value={`₹${stats.total_saved.toLocaleString("en-IN")}`} />
+                </div>
+              )}
 
           {tab === "Products" && (
             <div className="max-w-3xl">
@@ -363,6 +372,8 @@ export default function Admin() {
           )}
 
           {tab === "WhatsApp" && <WhatsAppPanel />}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
     </div>

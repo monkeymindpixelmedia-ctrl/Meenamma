@@ -721,13 +721,43 @@ def _process_failed_payment(rzp_order_id: str, entity: dict):
     return att[0]
 
 
+def apply_kudam_deposit(kudam_id: str, amount_paise: int, source: str, payment_id: str = None):
+    """Credit a deposit towards a Kudam."""
+    krows = sb.table("kudams").select("*").eq("id", kudam_id).execute().data
+    if not krows:
+        return None
+    k = krows[0]
+    new_saved = k.get("saved_paise", 0) + amount_paise
+    upd = {"saved_paise": new_saved}
+    if new_saved >= k.get("goal_paise", 0) and k.get("status") == "active":
+        upd["status"] = "complete"
+    sb.table("kudams").update(upd).eq("id", kudam_id).execute()
+    sb.table("kudam_deposits").insert({
+        "kudam_id": kudam_id, "profile_id": k["profile_id"],
+        "amount_paise": amount_paise, "provider_payment_id": payment_id
+    }).execute()
+    return k
+
+
 def _credit_autopay_deposit(subscription_id: str, entity: dict) -> bool:
-    """Settle a subscription payment against the profile's oldest accruals."""
+    """Settle a subscription payment against the profile's oldest accruals and credit active Kudam."""
     prof = (sb.table("profiles").select("id")
             .eq("autopay_subscription_id", subscription_id).execute().data)
     if not prof:
         return False
-    return _settle_autopay_payment(prof[0]["id"], entity)
+    pid = prof[0]["id"]
+    settled = _settle_autopay_payment(pid, entity)
+    if not settled:
+        return False
+    pay_id = entity.get("id") or ""
+    if pay_id:
+        existing = sb.table("kudam_deposits").select("id").eq("provider_payment_id", pay_id).execute().data
+        if existing:
+            return True
+    kudams = sb.table("kudams").select("id").eq("profile_id", pid).eq("status", "active").order("created_at").limit(1).execute().data
+    if kudams:
+        apply_kudam_deposit(kudams[0]["id"], entity.get("amount") or 0, "autopay", pay_id)
+    return True
 
 
 def _settle_autopay_payment(profile_id: str, entity: dict) -> bool:

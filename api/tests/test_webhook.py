@@ -236,6 +236,9 @@ def test_webhook_subscription_charge_credits_kudam(monkeypatch):
         def table(self, t):
             return Q(t)
 
+        def rpc(self, fn, params):
+            return SimpleNamespace(execute=lambda: Resp([{"status": "settled"}]))
+
     def fake_apply(kudam_id, amount_paise, source, payment_id=None):
         credits.append((kudam_id, amount_paise, source, payment_id))
         deposits_db.append({"kudam_id": kudam_id, "provider_payment_id": payment_id})
@@ -309,6 +312,9 @@ def test_webhook_subscription_unknown_ignored(monkeypatch):
     class FakeSB:
         def table(self, t):
             return Q(t)
+
+        def rpc(self, fn, params):
+            return SimpleNamespace(execute=lambda: SimpleNamespace(data=[]))
 
     monkeypatch.setattr(index, "sb", FakeSB())
     monkeypatch.setenv("RAZORPAY_WEBHOOK_SECRET", WEBHOOK_SECRET)

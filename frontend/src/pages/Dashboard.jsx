@@ -395,7 +395,7 @@ export default function Dashboard() {
                 <div className="flex flex-col md:flex-row items-center gap-8 mt-4">
                   <SavingsMandala progress={progress} size={250} />
                   <div className="flex-1 w-full">
-                    <h2 className="font-serif text-obsidian text-3xl font-medium" data-testid="active-kudam-name">{active.name}</h2>
+                    <h2 className="font-sans text-obsidian text-2xl md:text-3xl font-semibold tracking-wide" data-testid="active-kudam-name">{active.name}</h2>
                     <p className="num text-obsidian/85 text-base mt-1" data-testid="active-kudam-amounts">
                       <span className="rupee">₹</span>{active.saved_amount.toLocaleString("en-IN")}
                       <span className="text-obsidian/55"> of </span><span className="rupee">₹</span><span className="text-obsidian/70">{active.goal_amount.toLocaleString("en-IN")}</span>
@@ -588,7 +588,7 @@ export default function Dashboard() {
                     >
                       <div className="flex justify-between items-center">
                         <div className="min-w-0">
-                          <p className="font-serif text-obsidian text-lg font-medium truncate">{k.name}</p>
+                          <p className="font-sans text-obsidian text-base font-semibold truncate tracking-wide">{k.name}</p>
                           <p className="num text-obsidian/75 text-[12px]"><span className="rupee">₹</span>{k.saved_amount.toLocaleString("en-IN")} / <span className="rupee">₹</span>{k.goal_amount.toLocaleString("en-IN")}</p>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">

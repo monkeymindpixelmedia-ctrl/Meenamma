@@ -30,6 +30,174 @@ The following constraints are confirmed by the project roadmap and state and mus
 | R8 | Signup tutorial using Remotion and HyperFrames | Use a separate versioned video workspace and shared tutorial manifest; render a reviewed static MP4, then publish it as content/media consumed by the CRA app. |
 | R9 | Admin dashboard | Extend the protected `/admin` surface with lazy-loaded partner metrics, application review, revenue estimates, filters, and paginated detail endpoints. |
 
+## Business Answers (Non-Technical)
+
+This section answers the nine questions in simple business language. These are planning numbers, not promises. The product does not yet have stock-agency or delivery-partner records, so current partner counts should be shown as **0 recorded / awaiting signup** until applications are approved.
+
+### 1. Tamil Nadu and Chennai PIN-code baseline
+
+A PIN code means a unique six-digit postal code, not the number of post-office branches. The current working baseline is **83 unique PIN codes in Chennai district** and **2,023 unique PIN codes across Tamil Nadu**. Chennai district is different from the wider Chennai metropolitan area; the app should use the district/service-area value selected by Operations.
+
+The table below has all 38 Tamil Nadu districts. It is a planning baseline calculated from a current district-mapped PIN directory and should be refreshed before launch from the official [India Post PIN-code list](https://www.indiapost.gov.in/rti/pincodelist). The district mapping snapshot used for this estimate is available in the [India postal PIN/LGD dataset](https://github.com/bilal-webdev/india-postal-pincode-dataset).
+
+| District | Unique PIN codes |
+|---|---:|
+| Ariyalur | 29 |
+| Chengalpattu | 58 |
+| Chennai | 83 |
+| Coimbatore | 106 |
+| Cuddalore | 67 |
+| Dharmapuri | 32 |
+| Dindigul | 58 |
+| Erode | 59 |
+| Kallakurichi | 32 |
+| Kancheepuram | 30 |
+| Kanniyakumari | 65 |
+| Karur | 36 |
+| Krishnagiri | 37 |
+| Madurai | 57 |
+| Mayiladuthurai | 51 |
+| Nagapattinam | 39 |
+| Namakkal | 58 |
+| Perambalur | 24 |
+| Pudukkottai | 53 |
+| Ramanathapuram | 58 |
+| Ranipet | 40 |
+| Salem | 89 |
+| Sivaganga | 66 |
+| Tenkasi | 50 |
+| Thanjavur | 101 |
+| The Nilgiris | 46 |
+| Theni | 30 |
+| Thiruvarur | 72 |
+| Thoothukudi | 91 |
+| Tiruchirappalli | 89 |
+| Tirunelveli | 77 |
+| Tirupathur | 27 |
+| Tiruppur | 65 |
+| Tiruvallur | 60 |
+| Tiruvannamalai | 70 |
+| Vellore | 51 |
+| Viluppuram | 58 |
+| Virudhunagar | 59 |
+| **Tamil Nadu total** | **2,023** |
+
+Note: Postal and government sources may spell this district as `Thiruvallur` or `Tiruvallur`. For the product, normalize the spelling to **Tiruvallur** and count it once so the dashboard has 38 districts and does not create a duplicate row.
+
+### 2. Area-wise women delivery partners and how to recruit drivers
+
+There is no verified partner count yet. The dashboard should calculate the actual number as:
+
+`approved + active + women-led delivery partners, counted once per service area`
+
+For a Chennai pilot, a practical launch target is **20 women delivery partners** across four operating zones. This is a recruitment target, not the current count:
+
+| Chennai launch area | Suggested active-driver target | Reason |
+|---|---:|---|
+| North Chennai | 5 | Dense residential and market routes |
+| Central Chennai | 5 | High order frequency and short routes |
+| West Chennai | 4 | Wider routes and lower initial density |
+| South Chennai | 6 | Larger spread of residential communities |
+| **Pilot target** | **20** | Review after the first 30 days |
+
+Driver planning formula:
+
+`drivers required = ceiling(expected deliveries per day / 20 deliveries per driver × 1.2 peak buffer)`
+
+Example: 300 deliveries per day needs `300 / 20 × 1.2 = 18` drivers, so recruit **20** to cover leave, peak days, and onboarding gaps. Recruit through women’s self-help groups, local community organisations, existing customer referrals, neighbourhood WhatsApp groups, and a simple interest form until the partner app is ready. The dashboard should show both the actual approved count and the target gap, for example `12 active / 20 target = 8 more needed`.
+
+### 3. Stock-agency signup
+
+The stock-agency signup app is **not ready yet**. Until it is released, use a temporary manual process:
+
+1. Share a short Google Form or WhatsApp/phone registration link.
+2. Capture name, phone, business name, address, district, PIN code, storage capacity, product categories, bank/UPI details, and women-led status.
+3. Operations calls the applicant, checks the location and documents, and marks the application `pending`, `approved`, or `rejected` in an internal sheet.
+4. Move approved agencies into the app after the signup flow is released.
+
+No agency should be shown as active in metrics until Operations approves it.
+
+### 4. Delivery-partner signup
+
+The delivery-partner signup app is also **not ready yet**. Use the same temporary form/WhatsApp process and collect name, phone, district, preferred service areas/PIN codes, vehicle type, availability, emergency contact, bank/UPI details, and women-led status. Operations then verifies the person, provides a short route/safety orientation, and adds the partner to the approved-driver list.
+
+When the app is ready, the flow should be: choose “Delivery Partner” → create/login to account → select areas → upload required documents → submit → wait for review → receive approval and start accepting routes.
+
+### 5. Approximate monthly stock-agency revenue
+
+Use the phrase **estimated monthly agency margin**, not guaranteed income or net profit. A simple launch model is:
+
+`monthly gross margin = orders per day × average order value × 26 operating days × 8% agency margin`
+
+| Agency level | Example calculation | Estimated gross margin | Example monthly operating costs | Approx. balance before tax |
+|---|---|---:|---:|---:|
+| Starter | 15 orders/day × ₹650 × 26 × 8% | ₹20,280 | ₹8,000 | ₹12,280 |
+| Growing | 30 orders/day × ₹700 × 26 × 8% | ₹43,680 | ₹15,000 | ₹28,680 |
+| Established | 50 orders/day × ₹800 × 26 × 8% | ₹83,200 | ₹25,000 | ₹58,200 |
+
+Example: a growing agency processes `30 × 26 = 780` orders per month. At an average basket of ₹700, order value is `780 × ₹700 = ₹5,46,000`; at 8%, the estimated agency margin is **₹43,680** before rent, staff, packing, electricity, spoilage, transport, and tax. The final percentage must be approved by Meenamma Finance.
+
+### 6. Approximate monthly delivery-partner revenue
+
+Use the phrase **estimated delivery payout**, because the final amount depends on the approved per-delivery rate, incentives, distance, cancellations, and expenses. A simple example is:
+
+`gross payout = completed deliveries per day × payout per delivery × 26 operating days`
+
+| Working pattern | Example calculation | Estimated gross payout | Example fuel/data cost | Approx. balance before tax |
+|---|---|---:|---:|---:|
+| Part-time | 10 deliveries/day × ₹35 × 26 | ₹9,100 | ₹1,500 | ₹7,600 |
+| Regular | 20 deliveries/day × ₹40 × 26 | ₹20,800 | ₹4,000 | ₹16,800 |
+| Full-time | 30 deliveries/day × ₹45 × 26 | ₹35,100 | ₹6,000 | ₹29,100 |
+
+Example: a regular partner completes `20 × 26 = 520` deliveries in a month. At ₹40 per completed delivery, the gross payout is **₹20,800**. Meenamma should show the number of completed deliveries, rate, incentive, and deductions separately so the partner can understand how the amount was calculated.
+
+### 7. Referral link screenshots
+
+The referral link can follow the current project pattern:
+
+`https://<meenamma-domain>/register?ref=<referral_code>`
+
+There is no production screenshot yet because the partner signup screen is not ready. The screenshot to capture after implementation should show:
+
+```text
+┌────────────────────────────────────────┐
+│ Invite women to grow with Meenamma     │
+│ Your referral link                      │
+│ meenamma.app/register?ref=MEENA123     │
+│ [ Copy link ]     [ Share on WhatsApp ]│
+│ Referrals joined: 0   Reward: Pending   │
+└────────────────────────────────────────┘
+```
+
+Acceptance check for the real screenshot: opening the link must preserve the code through login/email confirmation, reject self-referrals, and show the referral source after successful signup. Do not use a placeholder screenshot as proof that the feature is complete.
+
+### 8. Signup tutorial and signup-page screenshots
+
+The signup tutorial and partner signup page are **not yet available to screenshot**. The first screenshot pack should contain:
+
+1. Partner-role selection: `Stock Agency` or `Delivery Partner`.
+2. Basic details form and PIN/area selection.
+3. Document/verification upload state.
+4. Review-pending confirmation page.
+5. Approved status and next steps.
+
+Recommended tutorial sequence: 45–60 seconds, with one clear action per screen—choose role, create account, fill details, choose area, submit, wait for approval, and start earning. For the Meenamma visual direction, use the existing obsidian `#070605` canvas, glass surfaces, neon gold `#FFD700` accents, serif headings, and tabular-monospace figures. Keep large, readable text and two clear focal points per frame so the video reads on a phone; publish one reviewed static MP4 and poster after the UI is final.
+
+### 9. Admin dashboard explanation
+
+The admin dashboard is the Operations control room. It should answer “how many partners do we have, where are they, what needs review, and what are the estimated payouts?” in one place.
+
+| Dashboard area | What it shows |
+|---|---|
+| Summary cards | Active stock agencies, active women delivery partners, covered PIN codes/areas, pending applications, estimated agency margin, and estimated delivery payout |
+| Stock agencies | District/PIN-wise agency count, approval status, capacity, and last activity |
+| Delivery partners | Area-wise active-driver count, target count, gap to target, availability, and completed deliveries |
+| Application queue | New, pending, approved, rejected, and suspended applications with reviewer notes |
+| Revenue view | Month, partner type, completed orders/deliveries, formula inputs, estimated gross amount, costs/adjustments, and confidence/basis |
+| Referral view | Referral code, applications started, approved partners, and resulting active partner count |
+
+Example operational reading: `Chennai South — 4 active drivers / 6 target — 2 recruitment gap`. An admin can filter by district, PIN code, partner type, women-led verification state, status, and month; export summary data; and open a partner record for review. Customer-facing users must not see private documents, phone numbers, reviewer notes, or other partners’ revenue information.
+
 ## Summary
 
 The existing repository already has the right foundation: React 18 with CRA, Supabase Auth in the browser, a FastAPI `/api` router, a service-role Supabase client on the server, migration-managed Postgres schema, existing staff-role assignments and RLS, a protected `/admin` page, and referral code/window logic. The phase should add a partner domain beside `profiles`, `orders`, and `delivery_zone_coverage`, not create a second authentication or API stack.
