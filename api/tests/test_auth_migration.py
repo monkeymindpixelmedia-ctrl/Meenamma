@@ -1,7 +1,9 @@
 from types import SimpleNamespace
 
 from scripts.migrate_profiles_to_supabase_auth import missing_emails, normalized_emails
-from api.referrals import make_referral_code
+from datetime import datetime, timezone
+
+from api.referrals import make_referral_code, referral_window
 
 
 def test_normalized_emails_accepts_profile_dicts_and_auth_users():
@@ -23,3 +25,10 @@ def test_referral_code_uses_display_name_and_user_id_prefix():
 
 def test_referral_code_defaults_when_name_is_missing():
     assert make_referral_code(None, "1234abcd-0000-0000-0000-000000000000") == "USER1234"
+
+
+def test_referral_window_expires_after_90_days():
+    joined = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    assert referral_window(joined, datetime(2026, 1, 30, tzinfo=timezone.utc))["days_remaining"] == 61
+    assert referral_window(joined, datetime(2026, 4, 2, tzinfo=timezone.utc))["window_active"] is False

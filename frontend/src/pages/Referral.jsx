@@ -1,9 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, Check, Share2, Users, Gift, ArrowRight, Sparkles } from "lucide-react";
+import { Copy, Check, Share2, Users, Gift, ArrowRight, Sparkles, CheckCircle2, Clock3 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { haptic } from "../lib/api";
+import { api, haptic } from "../lib/api";
 
 const STEPS = [
   {
@@ -31,13 +31,35 @@ export default function Referral() {
   const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
   const [shareMessage, setShareMessage] = useState("");
+  const [referrals, setReferrals] = useState([]);
+  const [windowDays, setWindowDays] = useState(90);
+  const [referralsLoading, setReferralsLoading] = useState(true);
+  const [referralsError, setReferralsError] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+    api.get("/referrals")
+      .then(({ data }) => {
+        if (!mounted) return;
+        setReferrals(data?.referrals || []);
+        setWindowDays(data?.window_days || 90);
+      })
+      .catch(() => mounted && setReferralsError("We could not load your referred households."))
+      .finally(() => mounted && setReferralsLoading(false));
+    return () => { mounted = false; };
+  }, []);
 
   const referralLink = user?.referral_code
     ? `${window.location.origin}/register?ref=${user.referral_code}`
     : "";
 
   const referralCode = user?.referral_code || "";
-  const referralCount = user?.referral_count || 0;
+  const referralCount = referrals.length || user?.referral_count || 0;
+
+  const joinedDate = (value) => {
+    if (!value) return "";
+    return new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  };
 
   const copyLink = async () => {
     if (!referralLink) return;
@@ -226,6 +248,67 @@ export default function Referral() {
               </p>
             </div>
           </div>
+        </motion.section>
+
+        {/* Referred households */}
+        <motion.section
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
+          className="max-w-2xl mx-auto mt-10"
+          data-testid="referred-households"
+        >
+          <div className="flex items-end justify-between mb-4">
+            <div>
+              <p className="text-gold-dim text-[10px] uppercase tracking-[0.35em] mb-2">Your community</p>
+              <h2 className="font-serif text-obsidian text-2xl md:text-3xl font-medium">Referred households</h2>
+            </div>
+            <p className="text-obsidian/50 text-[10px] uppercase tracking-[0.16em]">{windowDays}-day window</p>
+          </div>
+
+          {referralsLoading && (
+            <div className="card-white p-6 text-center text-obsidian/60 text-sm font-serif italic">Loading referralsâ€¦</div>
+          )}
+          {!referralsLoading && referralsError && (
+            <div className="card-white p-6 text-center text-obsidian/70 text-sm font-serif italic" data-testid="referral-list-error">{referralsError}</div>
+          )}
+          {!referralsLoading && !referralsError && referrals.length === 0 && (
+            <div className="card-white p-6 text-center text-obsidian/60 text-sm font-serif italic" data-testid="referral-list-empty">
+              No one has joined through your link yet.
+            </div>
+          )}
+          {!referralsLoading && !referralsError && referrals.length > 0 && (
+            <div className="space-y-3">
+              {referrals.map((referral) => {
+                const progress = Math.min(100, (referral.days_elapsed / referral.window_days) * 100);
+                return (
+                  <div key={referral.id} className="card-white p-5" data-testid={`referred-member-${referral.id}`}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="font-serif text-obsidian text-lg truncate" data-testid="referred-member-name">{referral.name}</p>
+                        <p className="text-obsidian/50 text-[10px] uppercase tracking-[0.16em] mt-1">
+                          Joined {joinedDate(referral.joined_at)}
+                        </p>
+                      </div>
+                      <div className={`flex items-center gap-1.5 text-[10px] uppercase tracking-[0.12em] whitespace-nowrap ${referral.is_subscriber ? "text-green-700" : "text-obsidian/50"}`}>
+                        {referral.is_subscriber ? <CheckCircle2 size={14} /> : <Clock3 size={14} />}
+                        {referral.is_subscriber ? "Subscriber" : "Not subscribed"}
+                      </div>
+                    </div>
+                    <div className="mt-5">
+                      <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.12em] text-obsidian/55 mb-2">
+                        <span>{referral.window_active ? `${referral.days_remaining} days remaining` : "90-day window closed"}</span>
+                        <span>{referral.days_elapsed}/{referral.window_days} days</span>
+                      </div>
+                      <div className="h-1.5 bg-gold/15 overflow-hidden">
+                        <div className="h-full bg-gold transition-all" style={{ width: `${progress}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </motion.section>
 
         {/* How It Works */}

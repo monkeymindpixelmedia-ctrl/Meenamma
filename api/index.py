@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from supabase import create_client
 from api.supabase_auth_config import (GOOGLE_ENABLED, SupabaseSession, bootstrap_session,
                                       session_identity, verified_session)
-from api.referrals import make_referral_code
+from api.referrals import REFERRAL_WINDOW_DAYS, make_referral_code, referral_window
 from api.notify import drain_notification_outbox, queue_notification
 from api import ladder
 
@@ -181,6 +181,28 @@ def auth_config():
 @api.get("/auth/me")
 def me(user: dict = Depends(get_current_user)):
     return user_public(user)
+
+
+@api.get("/referrals")
+def referrals(user: dict = Depends(get_current_user)):
+    rows = (sb.table("profiles")
+            .select("id,display_name,created_at,autopay_status,autopay_cadence")
+            .eq("referred_by", user["id"])
+            .order("created_at", desc=True)
+            .execute().data)
+    items = []
+    for row in rows:
+        window = referral_window(row.get("created_at"), now_utc())
+        items.append({
+            "id": row["id"],
+            "name": row.get("display_name") or "Member",
+            "joined_at": row.get("created_at"),
+            "is_subscriber": row.get("autopay_status") == "active",
+            "subscription_status": row.get("autopay_status") or "none",
+            "autopay_cadence": row.get("autopay_cadence") or "manual",
+            **window,
+        })
+    return {"window_days": REFERRAL_WINDOW_DAYS, "referrals": items}
 
 
 class ProfileIn(BaseModel):
