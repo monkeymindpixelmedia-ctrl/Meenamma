@@ -105,8 +105,11 @@ async def get_current_user(auth_session: SessionContainer = Depends(verified_ses
     p["_role"] = "admin" if "ops_admin" in roles else "user"
     retire_legacy_autopay(p)
 
-    ref_count_res = sb.table("profiles").select("id", count="exact").eq("referred_by", p["id"]).execute()
-    p["referral_count"] = getattr(ref_count_res, "count", 0)
+    try:
+        ref_count_res = sb.table("profiles").select("id", count="exact").eq("referred_by", p["id"]).execute()
+        p["referral_count"] = getattr(ref_count_res, "count", 0)
+    except Exception:
+        p["referral_count"] = 0
 
     return p
 
