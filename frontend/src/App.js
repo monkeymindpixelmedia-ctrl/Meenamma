@@ -42,13 +42,21 @@ const NAV_PAGES = ["/home", "/dashboard", "/market", "/admin", "/profile"];
 
 function Shell() {
   const location = useLocation();
+  const { user } = useAuth();
   React.useEffect(() => {
     const params = new URLSearchParams(location.search);
     const ref = params.get("ref");
     if (ref) localStorage.setItem("meenamma_ref", ref);
   }, [location]);
 
-  const showChrome = NAV_PAGES.includes(location.pathname);
+  const showChrome = NAV_PAGES.includes(location.pathname) && Boolean(user);
+  const isAuthPage = [
+    "/login",
+    "/register",
+    "/auth/callback/google",
+    "/auth/verify-email",
+    "/auth/reset-password",
+  ].includes(location.pathname);
   return (
     <div className="w-full min-h-screen bg-alabaster-paper flex flex-col">
       {showChrome && <Header />}
@@ -112,7 +120,7 @@ function Shell() {
         </AnimatePresence>
       </div>
       {showChrome && <BottomNav />}
-      <Footer />
+      {!isAuthPage && <Footer />}
     </div>
   );
 }

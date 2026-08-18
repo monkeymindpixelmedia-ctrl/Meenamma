@@ -82,7 +82,7 @@ export default function Login() {
         <div className="flex flex-col items-center mb-10">
           <FiligreeLogo />
           <h1 className="font-serif text-obsidian text-3xl font-medium mt-4">Welcome back</h1>
-          <p className="text-obsidian/70 text-sm mt-2">Your kudam has been waiting.</p>
+          <p className="text-obsidian/70 text-sm mt-2">Sign in to continue.</p>
         </div>
 
         <form onSubmit={(e) => { e.preventDefault(); haptic(); doLogin(email, password); }} className="space-y-6">
@@ -125,7 +125,7 @@ export default function Login() {
             </Link>
           </div>
           <button className="btn-obsidian w-full" disabled={busy} data-testid="login-submit-btn">
-            {busy ? "Opening…" : "Enter"}
+            {busy ? "Signing in…" : "Log in"}
           </button>
         </form>
 
@@ -150,7 +150,7 @@ export default function Login() {
         <p className="text-obsidian/70 text-sm mt-8 text-center">
           New here?{" "}
           <Link to="/register" className="text-obsidian font-medium underline underline-offset-4 decoration-gold" data-testid="goto-register-link">
-            Begin your Kudam
+            Create an account
           </Link>
         </p>
       </motion.div>

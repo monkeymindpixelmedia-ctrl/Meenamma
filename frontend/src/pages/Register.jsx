@@ -121,8 +121,8 @@ export default function Register() {
         <AnimatePresence mode="wait">
           {step === 1 && (
             <motion.div key="s1" initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 16 }} transition={{ duration: 0.3 }}>
-              <h1 className="font-serif text-obsidian text-3xl font-medium text-center">Begin your Kudam</h1>
-              <p className="text-obsidian/70 text-sm mt-2 text-center">Step 1 · Your details</p>
+              <h1 className="font-serif text-obsidian text-3xl font-medium text-center">Create your account</h1>
+              <p className="text-obsidian/70 text-sm mt-2 text-center">Step 1 · Account details</p>
               <form onSubmit={toStep2} className="space-y-6 mt-10">
                 <input className="input-minimal" placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} required data-testid="register-name-input" />
                 <input className="input-minimal" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required data-testid="register-email-input" />
@@ -202,8 +202,8 @@ export default function Register() {
 
           {step === 2 && (
             <motion.div key="s2" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.3 }}>
-              <h1 className="font-serif text-obsidian text-3xl font-medium text-center">Configure Savings</h1>
-              <p className="text-obsidian/70 text-sm mt-2 text-center">Step 2 · Step amount & cadence</p>
+              <h1 className="font-serif text-obsidian text-3xl font-medium text-center">Choose your preferences</h1>
+              <p className="text-obsidian/70 text-sm mt-2 text-center">Step 2 · Preferences</p>
               
               <fieldset className="mt-8">
                 <legend className="text-obsidian/55 text-[9px] uppercase" style={{ letterSpacing: "0.2em" }}>Daily step</legend>
@@ -277,10 +277,10 @@ export default function Register() {
 
           {step === 3 && (
             <motion.div key="s3" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.3 }}>
-              <h1 className="font-serif text-obsidian text-3xl font-medium text-center">
-                {cadence === "manual" ? "Ceremony Setup" : "Setup Autopay"}
+                <h1 className="font-serif text-obsidian text-3xl font-medium text-center">
+                Complete your setup
               </h1>
-              <p className="text-obsidian/70 text-sm mt-2 text-center">Step 3 · Confirm plan details</p>
+              <p className="text-obsidian/70 text-sm mt-2 text-center">Step 3 · Confirm details</p>
               
               <div className="card-white p-6 mt-10 space-y-4">
                 <div>
@@ -303,7 +303,7 @@ export default function Register() {
               {error && <p className="text-obsidian text-sm italic font-serif mt-4">{error}</p>}
 
               <button className="btn-obsidian w-full mt-8" onClick={submit} disabled={busy} data-testid="register-submit-btn">
-                {busy ? "Activating…" : "Activate Daily Savings"}
+                {busy ? "Creating account…" : "Complete signup"}
               </button>
 
               <button className="w-full text-obsidian/60 text-xs mt-4 underline underline-offset-4" onClick={() => setStep(2)}>Back</button>
@@ -312,8 +312,8 @@ export default function Register() {
         </AnimatePresence>
 
         <p className="text-obsidian/70 text-sm mt-8 text-center">
-          Already among us?{" "}
-          <Link to="/login" className="text-obsidian font-medium underline underline-offset-4 decoration-gold" data-testid="goto-login-link">Enter</Link>
+          Already have an account?{" "}
+          <Link to="/login" className="text-obsidian font-medium underline underline-offset-4 decoration-gold" data-testid="goto-login-link">Log in</Link>
         </p>
       </div>
     </div>
