@@ -1,0 +1,23 @@
+{
+  "version": "2026.08.1",
+  "status": "reviewed",
+  "locale": "en-IN",
+  "title": "Create your Meenamma account",
+  "primary": {
+    "renderer": "remotion",
+    "file": "/tutorials/meenamma-signup-remotion.mp4",
+    "poster": "/tutorials/meenamma-signup-poster.png",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "durationSeconds": 30
+  },
+  "alternate": {
+    "renderer": "hyperframes",
+    "file": "/tutorials/meenamma-signup-hyperframes.mp4",
+    "width": 720,
+    "height": 1280,
+    "fps": 24,
+    "durationSeconds": 24
+  }
+}

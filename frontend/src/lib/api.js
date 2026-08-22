@@ -158,7 +158,7 @@ export async function setupAutopay(user, { stepAmount, cadence } = {}) {
     if (sub.manual) return sub;
     assertCheckoutPayload(sub, "subscription_id");
   } catch (error) {
-    throw checkoutError(error, "Unable to create the Razorpay subscription.");
+    throw checkoutError(error, "Unable to initialize automated Kudam mandate.");
   }
   return new Promise((resolve, reject) => {
     const rzp = new window.Razorpay({

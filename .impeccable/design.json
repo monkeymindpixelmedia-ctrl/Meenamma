@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-22T15:05:00.000Z",
+  "title": "Design System: Meenamma",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Neon Cyber Gold",
+        "canonical": "#FFD700",
+        "tonalRamp": [
+          "#332B00",
+          "#665600",
+          "#998200",
+          "#CCAD00",
+          "#FFD700",
+          "#FFE24D",
+          "#FFEC80",
+          "#FFF6B3"
+        ]
+      },
+      "primary-deep": {
+        "role": "primary-variant",
+        "displayName": "Deep Temple Gold",
+        "canonical": "#C59B27",
+        "tonalRamp": [
+          "#281F08",
+          "#4F3E10",
+          "#765D17",
+          "#9E7C1F",
+          "#C59B27",
+          "#D5B152",
+          "#E2C87D",
+          "#F1E0A8"
+        ]
+      },
+      "secondary": {
+        "role": "secondary",
+        "displayName": "Auspicious Amber",
+        "canonical": "#F59E0B",
+        "tonalRamp": [
+          "#331F02",
+          "#663F05",
+          "#995E07",
+          "#CC7D09",
+          "#F59E0B",
+          "#F7B442",
+          "#FACB79",
+          "#FCE1B1"
+        ]
+      },
+      "tertiary": {
+        "role": "tertiary",
+        "displayName": "Temple Emerald",
+        "canonical": "#10B981",
+        "tonalRamp": [
+          "#03251A",
+          "#064B34",
+          "#0A704D",
+          "#0D9567",
+          "#10B981",
+          "#40C79A",
+          "#70D5B4",
+          "#A0E3CD"
+        ]
+      },
+      "bg-obsidian": {
+        "role": "neutral",
+        "displayName": "Obsidian Canvas",
+        "canonical": "#070605",
+        "tonalRamp": [
+          "#030202",
+          "#070605",
+          "#12100E",
+          "#1E1B17",
+          "#2C2822",
+          "#413B33",
+          "#5B5448",
+          "#786F60"
+        ]
+      },
+      "surface-glass": {
+        "role": "surface",
+        "displayName": "Glass Card Smoke",
+        "canonical": "rgba(18, 14, 10, 0.82)",
+        "tonalRamp": [
+          "#090705",
+          "#120E0A",
+          "#1E1711",
+          "#2D231A",
+          "#413326",
+          "#5D4937",
+          "#7C624A",
+          "#9E7E5F"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display Serif",
+        "purpose": "Hero banners, milestone celebrations, and primary ceremony headers."
+      },
+      "headline": {
+        "displayName": "Headline Serif",
+        "purpose": "Section titles and major card headings."
+      },
+      "title": {
+        "displayName": "Title Sans",
+        "purpose": "Interactive module headers, partner tier titles."
+      },
+      "body": {
+        "displayName": "Body Sans",
+        "purpose": "Explanatory copy, terms, transaction lists."
+      },
+      "label": {
+        "displayName": "Label Mono/Sans",
+        "purpose": "Overlines, status tags, uppercase metric badges."
+      }
+    },
+    "shadows": [
+      {
+        "name": "glow-gold-subtle",
+        "value": "0 0 30px -5px rgba(212, 175, 55, 0.08)",
+        "purpose": "Ambient warmth beneath elevated glass cards."
+      },
+      {
+        "name": "glow-gold-btn",
+        "value": "0 4px 20px rgba(255, 215, 0, 0.25)",
+        "purpose": "Radiant aura for primary CTA buttons."
+      },
+      {
+        "name": "modal-depth",
+        "value": "0 30px 60px -15px rgba(0, 0, 0, 0.8)",
+        "purpose": "High elevation shadow for bottom sheets and modals."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-emil",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Standard spring transition for hovers, drawers, and modal entries."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Cyber Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "High-contrast neon gold primary action trigger with physical spring response.",
+      "html": "<button class=\"ds-btn-gold-cyber\">START KUDAM SAVINGS</button>",
+      "css": ".ds-btn-gold-cyber { background: linear-gradient(135deg, #FFD700 0%, #C59B27 100%); color: #070605; border: none; letter-spacing: 0.22em; text-transform: uppercase; font-size: 12px; font-weight: 600; padding: 14px 24px; border-radius: 8px; box-shadow: 0 4px 20px rgba(255, 215, 0, 0.25); cursor: pointer; transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-gold-cyber:hover { transform: translateY(-1px); box-shadow: 0 6px 25px rgba(255, 215, 0, 0.4); background: linear-gradient(135deg, #FFE44D 0%, #D4AF37 100%); } .ds-btn-gold-cyber:active { transform: scale(0.97); }"
+    },
+    {
+      "name": "Cyber Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Translucent glass button with hairline gold border for secondary workflows.",
+      "html": "<button class=\"ds-btn-cyber-outline\">EXPLORE PARTNER NETWORK</button>",
+      "css": ".ds-btn-cyber-outline { background: rgba(7, 6, 5, 0.4); color: #F5F2EB; border: 1px solid rgba(212, 175, 55, 0.35); letter-spacing: 0.22em; text-transform: uppercase; font-size: 10px; font-weight: 500; padding: 12px 20px; border-radius: 8px; cursor: pointer; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-cyber-outline:hover { background: rgba(212, 175, 55, 0.12); border-color: #FFD700; color: #FFD700; box-shadow: 0 0 15px rgba(255, 215, 0, 0.2); }"
+    },
+    {
+      "name": "Glass Container Card",
+      "kind": "card",
+      "refersTo": "card-glass",
+      "description": "Deep frosted dark obsidian card with hairline gold filigree outline.",
+      "html": "<div class=\"ds-card-glass\"><span class=\"ds-badge-gold\">KUDAM CEREMONY</span><h3 class=\"ds-card-title\">Daily Micro-Savings Step</h3><p class=\"ds-card-text\">Accumulate ₹5 per day automatically with weekly UPI settlement.</p></div>",
+      "css": ".ds-card-glass { background: rgba(18, 14, 10, 0.82); backdrop-filter: blur(28px); border: 1px solid rgba(212, 175, 55, 0.22); border-radius: 8px; padding: 24px; box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8), 0 0 30px -5px rgba(212, 175, 55, 0.08); } .ds-card-title { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 1.5rem; color: #F5F2EB; margin: 12px 0 6px; font-weight: 500; } .ds-card-text { font-family: 'Outfit', sans-serif; font-size: 0.9375rem; color: #A8A090; margin: 0; line-height: 1.5; }"
+    },
+    {
+      "name": "Cyberpunk Form Input",
+      "kind": "input",
+      "refersTo": "input-cyber",
+      "description": "Dark translucent text field with gold focus glow and crisp placeholder contrast.",
+      "html": "<input type=\"text\" class=\"ds-input-cyber\" placeholder=\"Enter 6-digit postal PIN code\" />",
+      "css": ".ds-input-cyber { background: rgba(7, 6, 5, 0.6); border: 1px solid rgba(212, 175, 55, 0.2); color: #F5F2EB; padding: 14px 16px; border-radius: 8px; font-size: 14px; outline: none; width: 100%; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); font-family: 'Outfit', sans-serif; } .ds-input-cyber::placeholder { color: rgba(168, 160, 144, 0.45); } .ds-input-cyber:focus { border-color: #FFD700; box-shadow: 0 0 15px -3px rgba(255, 215, 0, 0.25); }"
+    },
+    {
+      "name": "Status Badge Gold",
+      "kind": "chip",
+      "refersTo": "badge-gold",
+      "description": "Micro uppercase tag for active status and ritual indicators.",
+      "html": "<span class=\"ds-badge-gold\">ACTIVE MANDATE</span>",
+      "css": ".ds-badge-gold { display: inline-block; background: rgba(255, 215, 0, 0.08); border: 1px solid rgba(255, 215, 0, 0.3); color: #FFD700; font-size: 9px; text-transform: uppercase; letter-spacing: 0.2em; padding: 4px 8px; border-radius: 4px; font-family: 'Outfit', sans-serif; font-weight: 600; box-shadow: 0 0 10px rgba(255, 215, 0, 0.1); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Neo-Traditional Gold Vault",
+    "overview": "Meenamma unites ancient Tamil micro-savings ceremonies (Kudam) with cyberpunk fintech precision. The canvas is immersed in pitch obsidian night (#070605), evoking ancestral treasury vaults and nocturnal markets, illuminated by sharp neon gold filigree (#FFD700), warm earthen amber (#F59E0B), and deep translucent glassmorphism.",
+    "keyCharacteristics": [
+      "Deep obsidian canvas layered with translucent amber/gold radial light cones.",
+      "Neon gold accents applied with strict compositional discipline.",
+      "Dual-world typography pairing editorial serif display titles with crisp sans-serif metrics and Tamil heritage glyphs.",
+      "Tactile spring transitions with smooth physical momentum and zero jitter."
+    ],
+    "rules": [
+      {
+        "name": "The Rarity of Radiance Rule",
+        "body": "Neon Gold (#FFD700) must never exceed 15% of viewport area. Backgrounds and container fills must remain dark obsidian to preserve the luminosity of active elements.",
+        "section": "colors"
+      },
+      {
+        "name": "The No-Dead-Grey Rule",
+        "body": "Neutral surfaces and text must contain warm amber/gold undertones (#120E0A, #F5F2EB), never neutral cool steel greys.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Rupee Rule",
+        "body": "All financial amounts (₹) must render with tabular figures (font-variant-numeric: tabular-nums) to prevent horizontal layout shift during live updates.",
+        "section": "typography"
+      },
+      {
+        "name": "The Glass-Before-Shadow Rule",
+        "body": "Depth is created through translucent glass card surfaces (backdrop-filter: blur(28px)) with hairline gold borders (1px solid rgba(212, 175, 55, 0.22)), not opaque grey dropshadows.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do maintain deep obsidian canvas backgrounds (#070605) with warm ambient lighting.",
+      "Do format all currency and numerical metrics using tabular figures.",
+      "Do use Tamil heritage typography ('மீ', 'மீனம்மை') purposefully in brand anchors and badges.",
+      "Do support full motion reduction preferences (prefers-reduced-motion: reduce)."
+    ],
+    "donts": [
+      "Don't use standard cool grey backgrounds or flat solid grey cards.",
+      "Don't flood screens with raw neon yellow; keep accent coverage disciplined (<15%).",
+      "Don't use generic stock photos or corporate vector illustration slop.",
+      "Don't hide fees, mandate terms, or partner payout calculations."
+    ]
+  }
+}

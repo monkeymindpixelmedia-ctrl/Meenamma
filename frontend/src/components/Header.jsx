@@ -43,20 +43,26 @@ export default function Header() {
 
         {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center gap-12">
-          {links.map((l) => (
-            <NavLink
-              key={l.to}
-              to={l.to}
-              data-testid={`headernav-${l.label.toLowerCase().replace(" ", "-")}`}
-              className={({ isActive }) =>
-                `text-[10px] uppercase tracking-luxury transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                  isActive ? "text-obsidian font-medium underline underline-offset-8 decoration-gold" : "text-obsidian/50 hover:text-obsidian"
-                }`
-              }
-            >
-              {l.label}
-            </NavLink>
-          ))}
+          {links.map((l) => {
+            let displayLabel = l.label;
+            if (l.to === "/referral") {
+              displayLabel = user?.account_type === "student" ? "Partner Hub" : "Refer & Points";
+            }
+            return (
+              <NavLink
+                key={l.to}
+                to={l.to}
+                data-testid={`headernav-${l.label.toLowerCase().replace(" ", "-")}`}
+                className={({ isActive }) =>
+                  `text-[10px] uppercase tracking-luxury transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                    isActive ? "text-obsidian font-medium underline underline-offset-8 decoration-gold" : "text-obsidian/50 hover:text-obsidian"
+                  }`
+                }
+              >
+                {displayLabel}
+              </NavLink>
+            );
+          })}
         </nav>
 
         {/* Right Actions & Hamburger Toggle */}
@@ -68,6 +74,15 @@ export default function Header() {
           )}
           {user ? (
             <>
+              {user.account_type === "student" && user.student_serial_id ? (
+                <span className="hidden lg:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono bg-amber-100 text-amber-900 border border-amber-300 font-bold">
+                  {user.student_serial_id}
+                </span>
+              ) : user.royalty_points ? (
+                <span className="hidden lg:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono bg-gold/15 text-gold-dim border border-gold/30 font-bold">
+                  ⭐ {user.royalty_points} Pts
+                </span>
+              ) : null}
               <button
                 onClick={() => navigate("/profile")}
                 className="hidden md:block text-[10px] uppercase text-obsidian/60 hover:text-obsidian transition-colors duration-300 tracking-luxury active:scale-95"

@@ -1,0 +1,193 @@
+{
+  "name": "Meenamma WhatsApp AI Assistant (Gemini + Evolution API)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meenamma-whatsapp",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "webhook-trigger",
+      "name": "Evolution API Webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "check-from-me",
+              "leftValue": "={{ $json.body?.data?.key?.fromMe }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "check-not-group",
+              "leftValue": "={{ $json.body?.data?.key?.remoteJid }}",
+              "rightValue": "@g.us",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "filter-incoming",
+      "name": "Filter Incoming User Message"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body?.data?.message?.conversation || $json.body?.data?.message?.extendedTextMessage?.text || $json.body?.data?.message?.imageMessage?.caption || '' }}",
+        "options": {
+          "systemMessage": "# SYSTEM PROMPT: Meenamma Helper Bot\n\n## 1. Identity & Role\n- Name: Meenamma (மீனம்மை)\n- Role: You are a friendly, knowledgeable helper bot for the Meenamma platform.\n- Website: https://meenamma.org/\n- Core Purpose: Help customers choose harbor-fresh coastal fish, manage their daily/weekly Kudam subscriptions, track doorstep deliveries, and guide women micro-entrepreneurs joining our delivery network across Chennai and Tamil Nadu.\n\n## 2. Terminology Rules (Strict)\n- DO NOT use the words \"save\", \"saver\", or \"savings\".\n- DO use: \"subscribe\", \"subscription\", \"Kudam subscription\", \"daily step plan\", \"subscription balance\", \"members\".\n\n## 3. Communication Style & Voice\n- Tone: Helpful, warm, respectful, practical, and clear.\n- Language Policy: Fluent in Tamil (தமிழ்), English, and Tanglish (Tamil in English letters). Always reply in whichever language or script the user chooses.\n- Links: When guiding users to view products, subscribe, or check their dashboard, provide the official link: https://meenamma.org/\n\n## 4. Key Domains & Knowledge Base\n\n### A. Harbor-Fresh Coastal Seafood\n- Freshness Promise: 100% fresh catch sourced at dawn from coastal harbors, iced immediately, and never chemically preserved or frozen.\n- Popular Catch & Origins:\n  - Vanjaram (வஞ்சரம் / Seer Fish): Kasimedu Harbour, Chennai. King of feasts, perfect for tawa fry.\n  - Sankara (சங்கரா / Red Snapper): Nagapattinam Coast. Best for traditional meen kuzhambu (curry).\n  - Vaaval (வாவல் / Silver Pomfret): Rameswaram Waters. Tender white meat for Sunday family meals.\n  - Iral (இறால் / Tiger Prawns): Pulicat Lake lagoons. Ideal for thokku and biryani.\n  - Nethili (நெத்திலி / Anchovies): Kanyakumari Shore. Crisp fry favorite.\n  - Kanava (கணவா / Squid): Tuticorin Pearl Coast. Soft and tender for roast.\n  - Koduva (கொடுவா / Sea Bass): Ennore Creek. Delicate flavor for curries and bakes.\n  - Paarai (பாறை / Trevally): Cuddalore Coast. Firm texture for fiery varuval.\n  - Nandu (நண்டு / Mud Crabs): Muttukadu Backwaters. Sold live and jute-tied.\n  - Mathi (மத்தி / Sardines) & Ayila (அயிலை / Mackerel): Marina Shore & Mahabalipuram. High in Omega-3.\n  - Kaala (காளா / Threadfin): Pazhaverkadu Estuary. Traditional wedding feast fish.\n  - Sura (சுறா / Baby Shark): Nagoor Coast. Cut and steaked for shark puttu.\n  - Kelanga (கிளங்கா / Lady Fish): Kovalam Shore. Mild and tender, great for kids.\n  - Ooli (ஊளி / Barracuda): Point Calimere. Firm white meat for grilling.\n- Custom Cuts: Whole cleaned, curry cut (steaks), tawa fry slices, or peeled & deveined.\n\n### B. Kudam Subscription (குடம் சந்தா)\n- What it is: A flexible recurring plan where members subscribe with a small daily amount (₹1 to ₹100 per day) through automated UPI mandates via Razorpay.\n- How it works: Subscription amounts batch on a recurring schedule and build up a Kudam balance on the user's account at https://meenamma.org/.\n- How to use balance: Members use their subscription balance to order weekend fresh fish feasts or customized regular seafood boxes.\n- Flexibility: Members can adjust their daily step, pause, or cancel their subscription anytime from https://meenamma.org/ with zero hidden charges.\n\n### C. Women Partner Network & Delivery\n- Roles: Neighborhood Stock Agencies (hubs) and Delivery Partners (doorstep fulfillment by local women).\n- Pincode Coverage: Active across 83 Chennai PIN zones and 2,000+ Tamil Nadu PIN zones.\n- Onboarding: Women interested in becoming delivery or stock agency partners can register directly at https://meenamma.org/.\n\n## 5. Memory & Context Rules\n- Remember the user's name, preferences, previously mentioned favorite fish, and pincode if they shared it earlier in the conversation.\n- Never ask for OTP, UPI PIN, or bank passwords."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        480,
+        -20
+      ],
+      "id": "ai-agent-meenamma",
+      "name": "Meenamma AI Agent"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-1.5-flash",
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        440,
+        220
+      ],
+      "id": "gemini-chat-model",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Evolution API Webhook').item.json.body?.data?.key?.remoteJid || $('Filter Incoming User Message').item.json.body?.data?.key?.remoteJid }}",
+        "contextWindowLength": 30
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        580,
+        220
+      ],
+      "id": "window-memory",
+      "name": "Chat Memory (Never Forgets)"
+    },
+    {
+      "parameters": {
+        "operation": "sendTextMessage",
+        "instanceName": "meenamma",
+        "number": "={{ $('Evolution API Webhook').item.json.body?.data?.key?.remoteJid?.replace('@s.whatsapp.net', '') }}",
+        "text": "={{ $json.output }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-evolution-api-english.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        820,
+        -20
+      ],
+      "id": "evolution-send-message",
+      "name": "Evolution API (Send WhatsApp)"
+    }
+  ],
+  "connections": {
+    "Evolution API Webhook": {
+      "main": [
+        [
+          {
+            "node": "Filter Incoming User Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Incoming User Message": {
+      "main": [
+        [
+          {
+            "node": "Meenamma AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Meenamma AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Memory (Never Forgets)": {
+      "ai_memory": [
+        [
+          {
+            "node": "Meenamma AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meenamma AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Evolution API (Send WhatsApp)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=1080, height=1920" />
+    <meta name="viewport" content="width=720, height=1280" />
     <title>Meenamma signup tutorial — HyperFrames</title>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
     <style>
@@ -20,13 +20,24 @@
       }
 
       * { box-sizing: border-box; }
-      html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: var(--obsidian); }
+      html, body { margin: 0; width: 720px; height: 1280px; overflow: hidden; background: var(--obsidian); }
 
       #stage {
         position: relative;
+        width: 720px;
+        height: 1280px;
+        overflow: hidden;
+        background: var(--obsidian);
+      }
+
+      #canvas {
+        position: absolute;
+        inset: 0 auto auto 0;
         width: 1080px;
         height: 1920px;
         overflow: hidden;
+        transform: scale(0.6666667);
+        transform-origin: top left;
         color: var(--cream);
         background:
           radial-gradient(circle at 55% 0%, rgba(212,175,55,.17), transparent 42%),
@@ -34,7 +45,7 @@
           linear-gradient(145deg, #070605, #0d0a07 58%, #070605);
       }
 
-      #stage::before {
+      #canvas::before {
         content: "";
         position: absolute;
         inset: 0;
@@ -45,7 +56,7 @@
         background-size: 72px 72px;
       }
 
-      #stage::after {
+      #canvas::after {
         content: "";
         position: absolute;
         width: 900px;
@@ -139,7 +150,8 @@
     </style>
   </head>
   <body>
-    <main id="stage" data-composition-id="meenamma-signup-vertical" data-start="0" data-duration="24" data-width="1080" data-height="1920" data-fps="30">
+    <main id="stage" data-composition-id="meenamma-signup-vertical" data-start="0" data-duration="24" data-width="720" data-height="1280" data-fps="24">
+      <div id="canvas">
       <section id="intro" class="clip" data-start="0" data-duration="3" data-track-index="0">
         <div class="brand intro-brand">
           <img src="./assets/logo.png" alt="" />
@@ -196,6 +208,7 @@
         </div>
         <div class="final-cta"><div class="eyebrow">Ready when you are</div><h2>Sign up. Sign in. Start saving.</h2><div class="final-button">CREATE YOUR ACCOUNT →</div><div class="url">meenamma.org/register</div></div>
       </section>
+      </div>
     </main>
 
     <script>

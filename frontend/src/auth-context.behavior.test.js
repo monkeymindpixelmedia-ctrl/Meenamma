@@ -92,8 +92,34 @@ describe("AuthContext Supabase behavior", () => {
       upi_id: "meena@upi",
       cadence: "weekly",
       referred_by_code: undefined,
+      account_type: "normal",
     });
     expect(result).toEqual({ id: "user-1", email: "meena@example.com" });
+  });
+
+  test("registers a student partner with account_type student", async () => {
+    supabase.auth.signUp.mockResolvedValue({ data: { session }, error: null });
+    api.post.mockResolvedValue({ data: { ok: true } });
+    api.get.mockResolvedValue({ data: { id: "stu-1", email: "student@example.com", account_type: "student", student_serial_id: "MNM-STU-1234" } });
+
+    let result;
+    await act(async () => {
+      result = await currentAuth.register("Student Karthi", "student@example.com", "safe-password", 5, {
+        account_type: "student",
+      });
+    });
+
+    expect(api.post).toHaveBeenCalledWith("/profile/bootstrap", {
+      name: "Student Karthi",
+      email: "student@example.com",
+      daily_plan: 5,
+      pincode: "",
+      upi_id: "",
+      cadence: "weekly",
+      referred_by_code: undefined,
+      account_type: "student",
+    });
+    expect(result.account_type).toBe("student");
   });
 
   test("uses Supabase password sign-in and loads the application user", async () => {

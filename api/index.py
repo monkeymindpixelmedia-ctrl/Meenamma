@@ -19,7 +19,9 @@ from pydantic import BaseModel, Field
 from supabase import create_client
 from api.supabase_auth_config import (GOOGLE_ENABLED, SupabaseSession, bootstrap_session,
                                       session_identity, verified_session)
-from api.referrals import REFERRAL_WINDOW_DAYS, make_referral_code, referral_window
+from api.referrals import (REFERRAL_WINDOW_DAYS, STUDENT_CYCLE_DAYS, STUDENT_TARGET_AMOUNT,
+                           make_referral_code, make_student_serial, referral_window,
+                           student_savings_milestone)
 from api.notify import drain_notification_outbox, queue_notification
 from api import ladder
 
@@ -153,6 +155,44 @@ def retire_legacy_autopay(p: dict) -> None:
     p["legacy_autopay_retired"] = True
 
 
+    user_id, email = await session_identity(auth_session)
+    p = sync_profile_identity(user_id, email)
+    roles = [r["role"] for r in (p.get("staff_role_assignments") or []) if not r.get("revoked_at")]
+    p["_role"] = "admin" if "ops_admin" in roles else "user"
+    retire_legacy_autopay(p)
+
+    try:
+        ref_count_res = sb.table("profiles").select("id", count="exact").eq("referred_by", p["id"]).execute()
+        p["referral_count"] = getattr(ref_count_res, "count", 0)
+    except Exception:
+        p["referral_count"] = 0
+
+    return p
+
+
+
+def retire_legacy_autopay(p: dict) -> None:
+    """Cancel a pre-ladder flat-amount subscription on the user's next login.
+
+    Legacy subscribers ride a fixed-amount plan that cannot bill a climbing amount, and no
+    Razorpay API converts one into a quantity-lever plan. They are identified by an active
+    autopay with no ladder anchor, and must re-register; the dashboard prompts them.
+    """
+    if p.get("autopay_status") != "active" or p.get("cycle_anchor_date"):
+        return
+    if p.get("autopay_subscription_id"):
+        try:
+            rzp.subscription.cancel(p["autopay_subscription_id"])
+        except Exception:
+            p["legacy_autopay_retire_failed"] = True
+            return  # Do not claim cancellation while the provider may still charge it.
+    sb.table("profiles").update({"autopay_status": "cancelled",
+                                 "autopay_cadence": "manual"}).eq("id", p["id"]).execute()
+    p["autopay_status"] = "cancelled"
+    p["autopay_cadence"] = "manual"
+    p["legacy_autopay_retired"] = True
+
+
 def get_admin_user(user: dict = Depends(get_current_user)) -> dict:
     if user["_role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -161,16 +201,45 @@ def get_admin_user(user: dict = Depends(get_current_user)) -> dict:
 
 def user_public(p: dict) -> dict:
     step_paise = p.get("step_paise") or 0
-    return {"id": p["id"], "email": p.get("email") or "", "name": p.get("display_name") or "",
-            "role": p.get("_role", "user"), "daily_plan": p.get("daily_plan") or 5,
-            "pincode": p.get("pincode") or "", "upi_id": p.get("upi_id") or "",
-            "autopay_status": p.get("autopay_status") or "none", "locale": p.get("locale") or "en",
-            "autopay_cadence": p.get("autopay_cadence") or "manual",
-            "step_amount": round(step_paise / 100) if step_paise else 0,
-            "step_paise": step_paise,
-            "legacy_autopay_retired": bool(p.get("legacy_autopay_retired")),
-            "referral_code": p.get("referral_code"),
-            "referral_count": p.get("referral_count", 0)}
+    account_type = p.get("account_type") or "normal"
+    student_serial_id = p.get("student_serial_id")
+    royalty_points = p.get("royalty_points") or 0
+
+    out = {
+        "id": p["id"],
+        "email": p.get("email") or "",
+        "name": p.get("display_name") or "",
+        "role": p.get("_role", "user"),
+        "account_type": account_type,
+        "student_serial_id": student_serial_id,
+        "student_cycle_start": p.get("student_cycle_start"),
+        "royalty_points": royalty_points,
+        "daily_plan": p.get("daily_plan") or 5,
+        "pincode": p.get("pincode") or "",
+        "upi_id": p.get("upi_id") or "",
+        "autopay_status": p.get("autopay_status") or "none",
+        "locale": p.get("locale") or "en",
+        "autopay_cadence": p.get("autopay_cadence") or "manual",
+        "step_amount": round(step_paise / 100) if step_paise else 0,
+        "step_paise": step_paise,
+        "legacy_autopay_retired": bool(p.get("legacy_autopay_retired")),
+        "referral_code": p.get("referral_code"),
+        "referral_count": p.get("referral_count", 0),
+    }
+
+    if account_type == "student" or student_serial_id:
+        try:
+            kudam_rows = sb.table("kudams").select("saved_paise").eq("profile_id", p["id"]).execute().data
+            total_saved_paise = sum((r.get("saved_paise") or 0) for r in (kudam_rows or []))
+        except Exception:
+            total_saved_paise = 0
+        out["student_milestone"] = student_savings_milestone(
+            p.get("student_cycle_start") or p.get("created_at"),
+            total_saved_paise,
+            now_utc()
+        )
+
+    return out
 
 
 @api.get("/config/auth")
@@ -185,11 +254,16 @@ def me(user: dict = Depends(get_current_user)):
 
 @api.get("/referrals")
 def referrals(user: dict = Depends(get_current_user)):
+    uid = user["id"]
+    account_type = user.get("account_type") or "normal"
+    student_serial_id = user.get("student_serial_id")
+    royalty_points = user.get("royalty_points") or 0
+
     rows = (sb.table("profiles")
-            .select("id,display_name,created_at,autopay_status,autopay_cadence")
-            .eq("referred_by", user["id"])
+            .select("id,display_name,created_at,autopay_status,autopay_cadence,account_type")
+            .eq("referred_by", uid)
             .order("created_at", desc=True)
-            .execute().data)
+            .execute().data or [])
     items = []
     for row in rows:
         window = referral_window(row.get("created_at"), now_utc())
@@ -197,12 +271,70 @@ def referrals(user: dict = Depends(get_current_user)):
             "id": row["id"],
             "name": row.get("display_name") or "Member",
             "joined_at": row.get("created_at"),
+            "account_type": row.get("account_type") or "normal",
             "is_subscriber": row.get("autopay_status") == "active",
             "subscription_status": row.get("autopay_status") or "none",
             "autopay_cadence": row.get("autopay_cadence") or "manual",
             **window,
         })
-    return {"window_days": REFERRAL_WINDOW_DAYS, "referrals": items}
+
+    resp = {
+        "window_days": REFERRAL_WINDOW_DAYS,
+        "referrals": items,
+        "account_type": account_type,
+        "student_serial_id": student_serial_id,
+        "royalty_points": royalty_points,
+    }
+
+    if account_type == "student" or student_serial_id:
+        try:
+            kudam_rows = sb.table("kudams").select("saved_paise").eq("profile_id", uid).execute().data
+            total_saved_paise = sum((r.get("saved_paise") or 0) for r in (kudam_rows or []))
+        except Exception:
+            total_saved_paise = 0
+
+        milestone = student_savings_milestone(
+            user.get("student_cycle_start") or user.get("created_at"),
+            total_saved_paise,
+            now_utc()
+        )
+        resp["student_milestone"] = milestone
+
+        try:
+            comm_rows = (sb.table("student_commissions")
+                         .select("*, referred_profiles:referred_profile_id(display_name)")
+                         .eq("student_id", uid)
+                         .order("created_at", desc=True)
+                         .execute().data or [])
+        except Exception:
+            comm_rows = []
+
+        total_earned_paise = sum(c.get("amount_paise", 0) for c in comm_rows if c.get("status") in ("approved", "paid"))
+        pending_paise = sum(c.get("amount_paise", 0) for c in comm_rows if c.get("status") == "pending")
+        paid_paise = sum(c.get("amount_paise", 0) for c in comm_rows if c.get("status") == "paid")
+
+        resp["commissions"] = comm_rows
+        resp["commission_summary"] = {
+            "total_earned_paise": total_earned_paise,
+            "total_earned_amount": round(total_earned_paise / 100),
+            "pending_paise": pending_paise,
+            "pending_amount": round(pending_paise / 100),
+            "paid_paise": paid_paise,
+            "paid_amount": round(paid_paise / 100),
+        }
+    else:
+        try:
+            pts_rows = (sb.table("royalty_points_ledger")
+                        .select("*")
+                        .eq("profile_id", uid)
+                        .order("created_at", desc=True)
+                        .limit(20)
+                        .execute().data or [])
+        except Exception:
+            pts_rows = []
+        resp["points_history"] = pts_rows
+
+    return resp
 
 
 class ProfileIn(BaseModel):
@@ -213,6 +345,7 @@ class ProfileIn(BaseModel):
     locale: Optional[str] = None
     referred_by_code: Optional[str] = None
     cadence: Optional[str] = None
+    account_type: Optional[str] = None
 
 
 def profile_updates(body: ProfileIn) -> dict:
@@ -238,6 +371,9 @@ def profile_updates(body: ProfileIn) -> dict:
         if locale not in ("en", "ta"):
             raise HTTPException(status_code=400, detail="locale must be 'en' or 'ta'")
         upd["locale"] = locale
+    account_type = getattr(body, "account_type", None)
+    if account_type in ("normal", "student"):
+        upd["account_type"] = account_type
     return upd
 
 
@@ -249,8 +385,14 @@ async def bootstrap_profile(body: ProfileIn,
     upd = {**profile_updates(body), "email": email}
     is_new = False
 
+    req_account_type = getattr(body, "account_type", None) or "normal"
+    if req_account_type == "student":
+        upd["account_type"] = "student"
+        upd["student_serial_id"] = make_student_serial(user_id)
+        upd["student_cycle_start"] = now_utc().isoformat()
+
     # Check if a profile already exists for this user_id
-    existing = sb.table("profiles").select("id,referral_code,referred_by,display_name").eq("id", user_id).execute().data
+    existing = sb.table("profiles").select("id,referral_code,referred_by,display_name,account_type,student_serial_id").eq("id", user_id).execute().data
     if existing:
         current = existing[0]
         if not current.get("referral_code"):
@@ -261,11 +403,15 @@ async def bootstrap_profile(body: ProfileIn,
             parent_id = referred_profile_id(getattr(body, "referred_by_code", None), user_id)
             if parent_id:
                 upd["referred_by"] = parent_id
+        if current.get("account_type") == "student" and not current.get("student_serial_id"):
+            upd["student_serial_id"] = make_student_serial(user_id)
+            if not current.get("student_cycle_start"):
+                upd["student_cycle_start"] = now_utc().isoformat()
         sb.table("profiles").update(upd).eq("id", user_id).execute()
         profile_id = user_id
     else:
         # Check if the email already belongs to a profile from a different auth core
-        by_email = sb.table("profiles").select("id,referral_code,referred_by").eq("email", email).execute().data
+        by_email = sb.table("profiles").select("id,referral_code,referred_by,account_type,student_serial_id").eq("email", email).execute().data
         if by_email:
             profile_id = by_email[0]["id"]
             legacy_profile = by_email[0]
@@ -275,6 +421,8 @@ async def bootstrap_profile(body: ProfileIn,
                 parent_id = referred_profile_id(getattr(body, "referred_by_code", None), profile_id)
                 if parent_id:
                     upd["referred_by"] = parent_id
+            if legacy_profile.get("account_type") == "student" and not legacy_profile.get("student_serial_id"):
+                upd["student_serial_id"] = make_student_serial(profile_id)
             sb.table("profiles").update(upd).eq("id", profile_id).execute()
         else:
             upd["referral_code"] = make_referral_code(upd.get("display_name"), user_id)
@@ -289,10 +437,11 @@ async def bootstrap_profile(body: ProfileIn,
     # Idempotent first Kudam creation
     existing_kudam = sb.table("kudams").select("id").eq("profile_id", profile_id).execute().data
     if not existing_kudam:
+        is_stu = upd.get("account_type") == "student"
         sb.table("kudams").insert({
             "profile_id": profile_id,
-            "name": "First Vessel",
-            "goal_paise": 1000 * 100
+            "name": "Student 60-Day Kudam" if is_stu else "First Vessel",
+            "goal_paise": (5050 * 100) if is_stu else (1000 * 100)
         }).execute()
 
     return {"ok": True, "is_new": is_new}
@@ -685,8 +834,54 @@ def verify_payment(body: VerifyIn, user: dict = Depends(get_current_user)):
         sb.table("kudams").update({"status": "redeemed", "redeemed_at": now_utc().isoformat()}) \
             .eq("id", policy["redeem_kudam_id"]).execute()
     order = sb.table("orders").select("*, order_items(*)").eq("id", att["order_id"]).execute().data[0]
+    _process_referral_rewards(order["id"], uid, order.get("total_paise", 0))
     queue_order_notification(order, "booking_confirmed", user)
     return {"ok": True, "purpose": "booking", "booking": booking_out(order)}
+
+
+def _process_referral_rewards(order_id: str, buyer_profile_id: str, total_paise: int):
+    """Credit 1 royalty point for normal referrer on fresh catch shopping or commission for student partner."""
+    if not buyer_profile_id or not order_id:
+        return
+    try:
+        buyer_rows = sb.table("profiles").select("id, referred_by, display_name").eq("id", buyer_profile_id).execute().data
+        if not buyer_rows or not buyer_rows[0].get("referred_by"):
+            return
+        buyer = buyer_rows[0]
+        referrer_id = buyer["referred_by"]
+        ref_rows = sb.table("profiles").select("id, account_type, royalty_points, display_name").eq("id", referrer_id).execute().data
+        if not ref_rows:
+            return
+        referrer = ref_rows[0]
+        ref_type = referrer.get("account_type") or "normal"
+
+        if ref_type == "student":
+            existing = sb.table("student_commissions").select("id").eq("order_id", order_id).execute().data
+            if existing:
+                return
+            comm_paise = max(500, round(total_paise * 0.05)) if total_paise else 500
+            sb.table("student_commissions").insert({
+                "student_id": referrer_id,
+                "referred_profile_id": buyer_profile_id,
+                "order_id": order_id,
+                "amount_paise": comm_paise,
+                "status": "approved"
+            }).execute()
+        else:
+            existing = sb.table("royalty_points_ledger").select("id").eq("order_id", order_id).eq("reason", "referral_purchase").execute().data
+            if existing:
+                return
+            sb.table("royalty_points_ledger").insert({
+                "profile_id": referrer_id,
+                "points_change": 1,
+                "reason": "referral_purchase",
+                "order_id": order_id,
+                "note": f"1 point earned from {buyer.get('display_name') or 'referred friend'}'s fresh catch order"
+            }).execute()
+            new_pts = (referrer.get("royalty_points") or 0) + 1
+            sb.table("profiles").update({"royalty_points": new_pts}).eq("id", referrer_id).execute()
+    except Exception:
+        pass
 
 
 # ---------- Razorpay webhook ----------
@@ -708,6 +903,7 @@ def _process_captured_payment(rzp_order_id: str, entity: dict):
                                    "confirmed_at": now_utc().isoformat()}).eq("id", att["order_id"]).execute()
         order = (sb.table("orders").select("*, order_items(*), profiles(email, display_name)")
                  .eq("id", att["order_id"]).execute().data[0])
+        _process_referral_rewards(order["id"], order.get("profile_id"), order.get("total_paise", 0))
         queue_order_notification(order, "booking_confirmed")
     return att
 

@@ -562,7 +562,7 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <button className="btn-gold-outline w-full mt-4 !py-2.5" onClick={enableAutopay} disabled={busy} data-testid="enable-autopay-btn">
-                    {busy ? "Preparing…" : cadence === "manual" ? "Start manual savings" : "Continue to subscription"}
+                    {busy ? "Preparing…" : cadence === "manual" ? "Start manual savings" : "Activate automated Kudam"}
                   </button>
                 )}
                 {msg && <p className="text-obsidian text-xs italic font-serif mt-3" data-testid="autopay-msg">{msg}</p>}

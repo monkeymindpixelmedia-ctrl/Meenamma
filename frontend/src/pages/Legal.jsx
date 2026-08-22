@@ -40,7 +40,7 @@ const POLICIES = {
       MEENAMMA provides local delivery services for all our products.
       
       **Delivery Timeframes:**
-      Orders are typically processed and dispatched within 1-2 business days. For daily subscriptions, delivery occurs daily as per the agreed schedule.
+      Orders are typically processed and dispatched within 1-2 business days. For daily recurring orders, delivery occurs daily as per the agreed schedule.
       
       **Shipping Charges:**
       Delivery fees are calculated at checkout based on your location. 

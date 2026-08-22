@@ -78,6 +78,7 @@ export function AuthProvider({ children }) {
       upi_id: extra.upi_id || "",
       cadence: extra.cadence || "weekly",
       referred_by_code: extra.referred_by_code,
+      account_type: extra.account_type || "normal",
     };
     const { data, error } = await supabase.auth.signUp({
       email,

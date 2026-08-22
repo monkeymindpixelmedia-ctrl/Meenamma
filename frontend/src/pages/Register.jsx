@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { api, formatApiErrorDetail, haptic } from "../lib/api";
+import SignupTutorial from "../components/SignupTutorial";
 
 function UserIcon({ className }) {
   return (
@@ -123,6 +124,7 @@ function BackgroundMandala() {
 export default function Register() {
   const { register, user: existingUser, refreshUser, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
+  const [accountType, setAccountType] = useState("normal"); // "normal" | "student"
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -131,6 +133,14 @@ export default function Register() {
   const [busy, setBusy] = useState(false);
   const [pwTouched, setPwTouched] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState(null);
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const roleParam = params.get("role");
+    if (roleParam === "student" || params.get("type") === "student") {
+      setAccountType("student");
+    }
+  }, []);
 
   React.useEffect(() => {
     if (existingUser) {
@@ -170,6 +180,7 @@ export default function Register() {
           pincode,
           cadence: "manual",
           referred_by_code,
+          account_type: accountType,
         });
         localStorage.removeItem("meenamma_ref");
         loggedInUser = await refreshUser();
@@ -178,10 +189,17 @@ export default function Register() {
           pincode,
           cadence: "manual",
           referred_by_code,
+          account_type: accountType,
         });
       }
 
-      navigate(loggedInUser?.verificationRequired ? "/auth/verify-email" : "/dashboard");
+      if (loggedInUser?.verificationRequired) {
+        navigate("/auth/verify-email");
+      } else if (accountType === "student") {
+        navigate("/referral");
+      } else {
+        navigate("/dashboard");
+      }
     } catch (err) {
       setError(formatApiErrorDetail(err.response?.data?.detail) || err.message || "Something went wrong. Please try again.");
     } finally {
@@ -227,10 +245,79 @@ export default function Register() {
           <p className="text-amber-200/60 text-xs mt-2 font-mono uppercase tracking-wider">Start Your Daily Kudam Wealth Ritual</p>
         </div>
 
+        {/* Account Type Toggle */}
+        <div className="grid grid-cols-2 gap-2 p-1 bg-black/40 border border-amber-500/20 rounded-lg mb-6">
+          <button
+            type="button"
+            onClick={() => {
+              haptic();
+              setAccountType("normal");
+            }}
+            className={`py-2 px-3 text-xs font-mono tracking-wider rounded-md transition-all ${
+              accountType === "normal"
+                ? "bg-amber-400 text-black font-bold shadow-[0_0_12px_rgba(255,215,0,0.3)]"
+                : "text-amber-200/60 hover:text-amber-100"
+            }`}
+            data-testid="register-type-normal"
+          >
+            Normal Member
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              haptic();
+              setAccountType("student");
+            }}
+            className={`py-2 px-3 text-xs font-mono tracking-wider rounded-md transition-all ${
+              accountType === "student"
+                ? "bg-amber-400 text-black font-bold shadow-[0_0_12px_rgba(255,215,0,0.3)]"
+                : "text-amber-200/60 hover:text-amber-100"
+            }`}
+            data-testid="register-type-student"
+          >
+            Student Partner
+          </button>
+        </div>
+
+        {/* Dynamic Context Card based on Account Type */}
+        {accountType === "student" ? (
+          <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-400/30 text-left space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">🎓</span>
+              <p className="text-xs font-mono text-amber-300 font-bold uppercase tracking-wider">
+                Student Partner Program
+              </p>
+            </div>
+            <ul className="text-[11px] text-amber-100/80 space-y-1 font-sans">
+              <li className="flex items-start gap-1.5">
+                <span className="text-amber-400">â€¢</span>
+                <span>Automatic <strong>Student Serial ID</strong> generated upon signup.</span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <span className="text-amber-400">â€¢</span>
+                <span><strong>60-Day Savings Challenge:</strong> Minimum ₹5,050 target to maintain commission eligibility.</span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <span className="text-amber-400">â€¢</span>
+                <span>Direct cash commissions on every referral transaction.</span>
+              </li>
+            </ul>
+          </div>
+        ) : (
+          <div className="mb-6 p-3.5 rounded-xl bg-white/5 border border-amber-500/15 text-left">
+            <p className="text-xs font-mono text-amber-300 font-semibold tracking-wide">
+              🌟 Member Shopping & Savings
+            </p>
+            <p className="text-[11px] text-amber-100/70 mt-1 leading-relaxed">
+              Drop daily coins into your Kudam and earn <strong>1 Royalty Point</strong> for fresh catch shopping whenever friends you invite make a purchase.
+            </p>
+          </div>
+        )}
+
         {/* Tab Navigation Switcher */}
         <div className="flex border-b border-amber-500/20 mb-8 relative">
           <Link
-            to="/login"
+            to={`/login?role=${accountType}`}
             className="w-1/2 text-center py-2 font-mono text-xs uppercase tracking-widest text-amber-100/50 hover:text-amber-200 transition-colors"
           >
             Sign In
@@ -239,6 +326,8 @@ export default function Register() {
             Sign Up
           </div>
         </div>
+
+        <SignupTutorial />
 
         {/* Form Container */}
         <form onSubmit={submit} className="space-y-4">
@@ -411,5 +500,4 @@ export default function Register() {
     </div>
   );
 }
-
 

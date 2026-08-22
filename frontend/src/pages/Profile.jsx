@@ -67,7 +67,20 @@ export default function Profile() {
       <div className="max-w-xl mx-auto px-4 md:px-8 pt-10">
         <p className="text-gold-dim text-[10px] uppercase" style={{ letterSpacing: "0.4em" }}>Your household</p>
         <div className="flex items-center justify-between">
-          <h1 className="font-serif text-obsidian text-3xl md:text-4xl font-medium">Profile</h1>
+          <div>
+            <h1 className="font-serif text-obsidian text-3xl md:text-4xl font-medium">Profile</h1>
+            <div className="flex items-center gap-2 mt-1">
+              {user?.account_type === "student" || user?.student_serial_id ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-amber-100 text-amber-900 border border-amber-300">
+                  🎓 Student Partner: <strong>{user?.student_serial_id || "MNM-STU-0001"}</strong>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-gold/15 text-gold-dim border border-gold/30">
+                  ⭐ {user?.royalty_points || 0} Royalty Points
+                </span>
+              )}
+            </div>
+          </div>
           {user?.role === "admin" && (
             <span className="flex items-center gap-1 text-gold-dim text-[10px] uppercase" style={{ letterSpacing: "0.2em" }}>
               <Crown size={14} /> Store Admin
@@ -88,8 +101,23 @@ export default function Profile() {
             transition={{ type: "spring", stiffness: 300, damping: 25, delay: 0.1 }}
           >
             <div className="absolute top-0 right-0 w-32 h-32 bg-gold/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
-            <h2 className="font-serif text-obsidian text-2xl mb-1">Refer & Earn</h2>
-            <p className="text-obsidian/70 text-xs mb-5 font-serif italic">Invite friends to build their Kudam.</p>
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="font-serif text-obsidian text-2xl mb-1">
+                  {user?.account_type === "student" ? "Student Affiliate Hub" : "Refer & Earn Points"}
+                </h2>
+                <p className="text-obsidian/70 text-xs mb-5 font-serif italic">
+                  {user?.account_type === "student"
+                    ? "Earn cash commissions and track your 60-day Kudam milestone."
+                    : "Earn 1 Royalty Point on every shopping order by referred friends."}
+                </p>
+              </div>
+              {user?.account_type === "student" && (
+                <span className="text-[10px] font-mono px-2 py-1 bg-obsidian text-gold rounded">
+                  Serial: {user?.student_serial_id}
+                </span>
+              )}
+            </div>
             
             <div className="flex items-center gap-2">
               <div className="flex-1 bg-white/70 backdrop-blur-sm border border-gold/20 px-4 py-3 text-obsidian/80 text-xs truncate font-mono">
@@ -125,7 +153,7 @@ export default function Profile() {
                 className="mt-4 w-full flex items-center justify-center gap-2 py-3 text-obsidian text-[10px] uppercase tracking-[0.2em] border border-gold/30 hover:bg-gold/5 transition-colors duration-300"
                 data-testid="view-referral-page-link"
               >
-                View Referral Page
+                {user?.account_type === "student" ? "Open Student Partner Portal" : "View Royalty Points & Referrals"}
                 <ArrowRight size={12} />
               </Link>
             </motion.div>

@@ -90,6 +90,7 @@ function BackgroundMandala() {
 export default function Login() {
   const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
+  const [loginRole, setLoginRole] = useState("normal"); // "normal" | "student"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -118,6 +119,8 @@ export default function Login() {
         navigate("/auth/verify-email");
       } else if (result?.role === "admin") {
         navigate("/admin");
+      } else if (result?.account_type === "student" || loginRole === "student") {
+        navigate("/referral");
       } else {
         navigate("/dashboard");
       }
@@ -165,12 +168,57 @@ export default function Login() {
           <p className="text-amber-200/60 text-xs mt-2 font-mono uppercase tracking-wider">Neo-Traditional Wealth Ritual</p>
         </div>
 
+        {/* Normal vs Student Role Selector */}
+        <div className="grid grid-cols-2 gap-2 p-1 bg-black/40 border border-amber-500/20 rounded-lg mb-6">
+          <button
+            type="button"
+            onClick={() => {
+              haptic();
+              setLoginRole("normal");
+            }}
+            className={`py-2 px-3 text-xs font-mono tracking-wider rounded-md transition-all ${
+              loginRole === "normal"
+                ? "bg-amber-400 text-black font-bold shadow-[0_0_12px_rgba(255,215,0,0.3)]"
+                : "text-amber-200/60 hover:text-amber-100"
+            }`}
+            data-testid="login-role-normal"
+          >
+            Normal Member
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              haptic();
+              setLoginRole("student");
+            }}
+            className={`py-2 px-3 text-xs font-mono tracking-wider rounded-md transition-all ${
+              loginRole === "student"
+                ? "bg-amber-400 text-black font-bold shadow-[0_0_12px_rgba(255,215,0,0.3)]"
+                : "text-amber-200/60 hover:text-amber-100"
+            }`}
+            data-testid="login-role-student"
+          >
+            Student Partner
+          </button>
+        </div>
+
+        {loginRole === "student" && (
+          <div className="mb-6 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-left">
+            <p className="text-[11px] font-mono text-amber-300 font-semibold tracking-wide">
+              🎓 Student Partner Access
+            </p>
+            <p className="text-[11px] text-amber-100/70 mt-1 leading-relaxed">
+              Log in to track your serial code, 60-day ₹5,050 Kudam milestone, and active commission payouts.
+            </p>
+          </div>
+        )}
+
         <div className="flex border-b border-amber-500/20 mb-8 relative">
           <div className="w-1/2 text-center py-2 font-mono text-xs uppercase tracking-widest text-amber-300 font-semibold border-b-2 border-amber-400">
             Sign In
           </div>
           <Link
-            to="/register"
+            to={`/register?role=${loginRole}`}
             className="w-1/2 text-center py-2 font-mono text-xs uppercase tracking-widest text-amber-100/50 hover:text-amber-200 transition-colors"
           >
             Sign Up
