@@ -155,43 +155,6 @@ def retire_legacy_autopay(p: dict) -> None:
     p["legacy_autopay_retired"] = True
 
 
-    user_id, email = await session_identity(auth_session)
-    p = sync_profile_identity(user_id, email)
-    roles = [r["role"] for r in (p.get("staff_role_assignments") or []) if not r.get("revoked_at")]
-    p["_role"] = "admin" if "ops_admin" in roles else "user"
-    retire_legacy_autopay(p)
-
-    try:
-        ref_count_res = sb.table("profiles").select("id", count="exact").eq("referred_by", p["id"]).execute()
-        p["referral_count"] = getattr(ref_count_res, "count", 0)
-    except Exception:
-        p["referral_count"] = 0
-
-    return p
-
-
-
-def retire_legacy_autopay(p: dict) -> None:
-    """Cancel a pre-ladder flat-amount subscription on the user's next login.
-
-    Legacy subscribers ride a fixed-amount plan that cannot bill a climbing amount, and no
-    Razorpay API converts one into a quantity-lever plan. They are identified by an active
-    autopay with no ladder anchor, and must re-register; the dashboard prompts them.
-    """
-    if p.get("autopay_status") != "active" or p.get("cycle_anchor_date"):
-        return
-    if p.get("autopay_subscription_id"):
-        try:
-            rzp.subscription.cancel(p["autopay_subscription_id"])
-        except Exception:
-            p["legacy_autopay_retire_failed"] = True
-            return  # Do not claim cancellation while the provider may still charge it.
-    sb.table("profiles").update({"autopay_status": "cancelled",
-                                 "autopay_cadence": "manual"}).eq("id", p["id"]).execute()
-    p["autopay_status"] = "cancelled"
-    p["autopay_cadence"] = "manual"
-    p["legacy_autopay_retired"] = True
-
 
 def get_admin_user(user: dict = Depends(get_current_user)) -> dict:
     if user["_role"] != "admin":

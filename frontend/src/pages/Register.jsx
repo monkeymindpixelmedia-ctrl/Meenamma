@@ -208,10 +208,6 @@ export default function Register() {
   };
 
   const doGoogleSignup = async () => {
-    if (googleEnabled !== true) {
-      if (googleEnabled === false) setError("Google sign-in is not configured.");
-      return;
-    }
     haptic();
     setBusy(true);
     setError("");

@@ -132,10 +132,6 @@ export default function Login() {
   };
 
   const doGoogleLogin = async () => {
-    if (googleEnabled !== true) {
-      if (googleEnabled === false) setError("Google sign-in is not configured.");
-      return;
-    }
     haptic();
     setBusy(true);
     setError("");

@@ -372,7 +372,7 @@ export default function Dashboard() {
 
         {kudams === null ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4 animate-pulse">
-            <div className="h-10 w-10 rounded-full border-t-2 border-gold border-r-2 border-transparent animate-spin"></div>
+            <div className="h-10 w-10 rounded-full border-2 border-gold border-t-transparent animate-spin"></div>
             <p className="text-center text-obsidian/50 font-serif italic" style={{ letterSpacing: "0.05em" }}>Preparing the vessel…</p>
           </div>
         ) : kudams.length === 0 && !showCreate ? (
