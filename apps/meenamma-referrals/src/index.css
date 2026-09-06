@@ -1,0 +1,245 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Noto+Serif+Tamil:wght@400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ====================================================================
+   MEENAMMA REFERRALS — DESIGN SYSTEM
+   Brand: Emerald Vibrant · Block-based (per UI UX Pro Max audit)
+   UX Pattern: Persuade · Hero + Testimonials + CTA
+   Motion: 8/10 — High energy for student/youth audience
+   ==================================================================== */
+
+:root {
+  --surface-base: #050908;
+  --surface: #0A100D;
+  --surface-raised: #111A15;
+  --emerald: #10B981;
+  --emerald-bright: #34D399;
+  --emerald-muted: rgba(16, 185, 129, 0.12);
+  --sky: #38BDF8;
+  --violet: #818CF8;
+  --text-primary: #F0FDF4;
+  --text-secondary: #A7C4B5;
+  --text-tertiary: #5F8373;
+  --border: rgba(16, 185, 129, 0.12);
+  --border-hover: rgba(16, 185, 129, 0.28);
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+html, body {
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-family: "Outfit", -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  caret-color: var(--emerald);
+  line-height: 1.6;
+}
+
+/* =====================================================================
+   ACCESSIBILITY — WCAG 2.1 AA (UI UX Pro Max audit · CRITICAL)
+   ===================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-pulse,
+  .animate-ping,
+  .animate-spin,
+  .animate-bounce { animation: none !important; }
+}
+
+:focus-visible {
+  outline: 2px solid var(--emerald);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+:focus:not(:focus-visible) { outline: none; }
+
+::selection { background: var(--emerald); color: #030705; }
+
+.tamil { font-family: "Noto Serif Tamil", serif; }
+.tabular-nums { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+/* =====================================================================
+   SCROLLBAR
+   ===================================================================== */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--surface-base); }
+::-webkit-scrollbar-thumb { background: rgba(16,185,129,0.20); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,0.38); }
+
+/* =====================================================================
+   ATMOSPHERIC BACKGROUND — Vibrant & Block-based (per audit)
+   ===================================================================== */
+.ambient-glow-referrals {
+  background:
+    radial-gradient(ellipse 70% 50% at 50% -10%, rgba(16,185,129,0.13) 0%, transparent 65%),
+    radial-gradient(ellipse 50% 60% at 100% 25%, rgba(56,189,248,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 0% 80%, rgba(129,140,248,0.06) 0%, transparent 60%),
+    var(--surface-base);
+}
+
+/* =====================================================================
+   CARDS
+   ===================================================================== */
+.card-glass {
+  background: rgba(10, 16, 13, 0.90);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+.card-glass:hover {
+  border-color: var(--border-hover);
+  box-shadow: 0 8px 32px -8px rgba(0,0,0,0.7), 0 0 24px -10px rgba(16,185,129,0.12);
+}
+
+/* Feature card — large block-based style (per Vibrant & Block-based) */
+.card-feature {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.22s ease, transform 0.22s ease, box-shadow 0.22s ease;
+  cursor: default;
+}
+
+.card-feature:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 40px -10px rgba(0,0,0,0.6), 0 0 24px -8px rgba(16,185,129,0.10);
+}
+
+/* =====================================================================
+   INPUTS
+   ===================================================================== */
+.input-cyber {
+  background: rgba(5,9,8,0.95);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 13px 16px 13px 44px;
+  font-size: 14px;
+  line-height: 1.5;
+  outline: none;
+  width: 100%;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  font-family: inherit;
+}
+
+.input-cyber:focus {
+  border-color: var(--emerald);
+  box-shadow: 0 0 0 3px rgba(16,185,129,0.14);
+}
+
+.input-cyber::placeholder { color: var(--text-tertiary); }
+.input-plain { padding: 13px 16px; }
+
+/* =====================================================================
+   BUTTONS
+   ===================================================================== */
+.btn-emerald {
+  background: var(--emerald);
+  color: #030705;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.14s ease;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  letter-spacing: 0.04em;
+}
+
+.btn-emerald:hover {
+  background: var(--emerald-bright);
+  box-shadow: 0 4px 22px rgba(16,185,129,0.32);
+}
+
+.btn-emerald:active { transform: scale(0.98); }
+
+/* =====================================================================
+   TABLE — Mobile overflow (High severity UX rule)
+   ===================================================================== */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll::-webkit-scrollbar { height: 4px; }
+
+/* =====================================================================
+   BADGES & LABELS
+   ===================================================================== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: "JetBrains Mono", monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.badge-emerald {
+  background: rgba(16,185,129,0.12);
+  color: var(--emerald);
+  border: 1px solid rgba(16,185,129,0.25);
+}
+
+.badge-sky {
+  background: rgba(56,189,248,0.10);
+  color: var(--sky);
+  border: 1px solid rgba(56,189,248,0.20);
+}
+
+.badge-muted {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+/* =====================================================================
+   TYPOGRAPHY SCALE (per audit: 32px+ heading size for Vibrant style)
+   ===================================================================== */
+.text-display {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.08;
+}
+
+.text-mono { font-family: "JetBrains Mono", "Courier New", monospace; }
+
+/* =====================================================================
+   STAT CARD
+   ===================================================================== */
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  transition: border-color 0.2s ease;
+}
+
+.stat-card:hover { border-color: var(--border-hover); }
+
+/* =====================================================================
+   SECTION SPACING — 64px per Vibrant & Block-based (audit: 48px+)
+   ===================================================================== */
+.section-gap { padding-top: 72px; padding-bottom: 72px; }
+.section-gap-sm { padding-top: 48px; padding-bottom: 48px; }

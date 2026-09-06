@@ -87,7 +87,8 @@ export function loadRazorpayScript() {
 }
 
 function assertCheckoutPayload(payload, idField) {
-  if (!payload?.key_id || !payload?.[idField]) {
+  const hasId = idField ? payload?.[idField] : (payload?.order_id || payload?.subscription_id);
+  if (!payload?.key_id || !hasId) {
     throw new Error("Razorpay configuration is incomplete. Please contact support.");
   }
 }
@@ -156,23 +157,27 @@ export async function setupAutopay(user, { stepAmount, cadence } = {}) {
   try {
     ({ data: sub } = await api.post("/autopay/subscribe", selection));
     if (sub.manual) return sub;
-    assertCheckoutPayload(sub, "subscription_id");
+    assertCheckoutPayload(sub);
   } catch (error) {
     throw checkoutError(error, "Unable to initialize automated Kudam mandate.");
   }
   return new Promise((resolve, reject) => {
-    const rzp = new window.Razorpay({
+    const checkoutOptions = {
       key: sub.key_id,
-      subscription_id: sub.subscription_id,
       name: "Meenamma",
       image: window.location.origin + "/logo.png",
       description: `Kudam savings · +₹${sub.step_amount}/day, settled ${sub.cadence}`,
-      prefill: { name: user?.name || "", email: user?.email || "" },
+      prefill: {
+        name: user?.name || user?.display_name || "",
+        email: user?.email || "",
+        contact: user?.phone || user?.phone_e164 || "",
+      },
       theme: { color: "#4A1C17" },
       handler: async (res) => {
         try {
           const { data } = await api.post("/autopay/verify", {
             razorpay_payment_id: res.razorpay_payment_id,
+            razorpay_order_id: res.razorpay_order_id,
             razorpay_subscription_id: res.razorpay_subscription_id,
             razorpay_signature: res.razorpay_signature,
           });
@@ -182,7 +187,16 @@ export async function setupAutopay(user, { stepAmount, cadence } = {}) {
         }
       },
       modal: { ondismiss: () => reject(new Error("Autopay setup cancelled")) },
-    });
+    };
+
+    if (sub.order_id) {
+      checkoutOptions.order_id = sub.order_id;
+      if (sub.customer_id) checkoutOptions.customer_id = sub.customer_id;
+    } else if (sub.subscription_id) {
+      checkoutOptions.subscription_id = sub.subscription_id;
+    }
+
+    const rzp = new window.Razorpay(checkoutOptions);
     if (typeof rzp.on === "function") {
       rzp.on("payment.failed", (response) =>
         rejectPaymentFailure(reject, response, "Autopay authorisation failed. Please try again."));

@@ -15,6 +15,8 @@ EMAIL_FROM = os.environ.get("NOTIFICATIONS_FROM_EMAIL", "Meenamma <noreply@meena
 MAX_ATTEMPTS = 3
 
 SUBJECTS = {
+    "autopay_payment_success": "Payment received for your Meenamma Kudam savings",
+    "payment_received": "Payment received for your Meenamma Kudam savings",
     "autopay_dunning": "Your Meenamma savings balance needs attention",
     "autopay_payment_failed": "Your Meenamma savings payment did not go through",
     "autopay_predebit": "Upcoming Meenamma savings debit",
@@ -28,6 +30,18 @@ SUBJECTS = {
 
 def _body(event_key: str, payload: dict, product: str) -> str:
     """Inner HTML for an outbox event (sibling ifs keep nesting flat)."""
+    if event_key in ("autopay_payment_success", "payment_received"):
+        amount = payload.get("amount") or 0
+        kudam_name = payload.get("kudam_name") or "your Kudam"
+        total_saved = payload.get("total_saved")
+        saved_line = f"<p>Total saved so far: <strong>₹{total_saved}</strong>.</p>" if total_saved is not None else ""
+        streak_line = f"<p>Day {payload.get('cycle_day')} of your 100-day savings challenge!</p>" if payload.get("cycle_day") else ""
+        return (
+            f"<p>We have successfully received your Kudam savings payment of <strong>₹{amount}</strong> for <strong>{kudam_name}</strong>.</p>"
+            f"{saved_line}"
+            f"{streak_line}"
+            "<p>Every step fills your Kudam. Keep your savings journey going!</p>"
+        )
     if event_key == "autopay_predebit":
         amount = payload.get("amount") or 0
         debit_date = payload.get("debit_date") or "tomorrow"
@@ -106,7 +120,13 @@ def _whatsapp_text(event_key: str, payload: dict, product: str) -> str:
     """Return the plain-text WhatsApp notification message."""
     name = payload.get("name") or "there"
     amount = payload.get("amount") or 0
+    kudam_name = payload.get("kudam_name") or "your Kudam"
+    total_saved = payload.get("total_saved")
     
+    if event_key in ("autopay_payment_success", "payment_received"):
+        saved_str = f" Total saved: ₹{total_saved}." if total_saved is not None else ""
+        return f"Vanakkam {name}! We have received your Kudam savings deposit of ₹{amount} for {kudam_name}.{saved_str} Keep your savings streak going towards your 100-day goal! 🌊"
+        
     if event_key == "autopay_predebit":
         debit_date = payload.get("debit_date") or "tomorrow"
         return f"Vanakkam {name}! Meenamma here. Just a quick heads-up: your daily savings deposit of \u20b9{amount} will be debited on {debit_date}. Keep your UPI account active for your weekend catch! \ud83c\udf0a"

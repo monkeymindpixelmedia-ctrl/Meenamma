@@ -19,10 +19,10 @@ def test_anchor_is_day_one():
 
 
 def test_cycle_day_climbs_then_resets():
-    assert ladder.cycle_day(d(29), ANCHOR) == 30
-    assert ladder.cycle_day(d(30), ANCHOR) == 1
-    assert ladder.cycle_day(d(59), ANCHOR) == 30
-    assert ladder.cycle_day(d(60), ANCHOR) == 1
+    assert ladder.cycle_day(d(99), ANCHOR) == 100
+    assert ladder.cycle_day(d(100), ANCHOR) == 1
+    assert ladder.cycle_day(d(199), ANCHOR) == 100
+    assert ladder.cycle_day(d(200), ANCHOR) == 1
 
 
 def test_cycle_day_rejects_dates_before_anchor():
@@ -33,10 +33,10 @@ def test_cycle_day_rejects_dates_before_anchor():
 # ---------- accrual amounts ----------
 def test_accrual_is_step_times_day():
     assert ladder.accrual_paise(STEP, 1) == 500
-    assert ladder.accrual_paise(STEP, 30) == 15000
+    assert ladder.accrual_paise(STEP, 100) == 50000
 
 
-@pytest.mark.parametrize("bad_day", [0, 31, -1])
+@pytest.mark.parametrize("bad_day", [0, 101, -1])
 def test_accrual_rejects_out_of_range_day(bad_day):
     with pytest.raises(ValueError):
         ladder.accrual_paise(STEP, bad_day)
@@ -47,27 +47,27 @@ def test_accrual_rejects_non_positive_step():
         ladder.accrual_paise(0, 1)
 
 
-def test_ninety_day_sweep_resets_every_cycle_and_totals_465_step():
-    """Three full cycles: the ladder must reset on schedule and each cycle cost 465 * step."""
-    amounts = [ladder.accrual_for_date(STEP, d(i), ANCHOR) for i in range(90)]
+def test_three_hundred_day_sweep_resets_every_cycle_and_totals_5050_step():
+    """Three full 100-day cycles: the ladder must reset on schedule and each cycle cost 5050 * step."""
+    amounts = [ladder.accrual_for_date(STEP, d(i), ANCHOR) for i in range(300)]
 
     assert amounts[:3] == [500, 1000, 1500]
-    for cycle_start in (0, 30, 60):
-        cycle = amounts[cycle_start:cycle_start + 30]
+    for cycle_start in (0, 100, 200):
+        cycle = amounts[cycle_start:cycle_start + 100]
         assert cycle[0] == STEP, "cycle must restart at one step"
-        assert cycle[-1] == STEP * 30, "cycle must peak at 30 steps"
+        assert cycle[-1] == STEP * 100, "cycle must peak at 100 steps"
         assert sum(cycle) == ladder.cycle_total_paise(STEP)
     assert sum(amounts) == 3 * ladder.cycle_total_paise(STEP)
 
 
-def test_cycle_total_multiple_is_465():
-    assert ladder.CYCLE_TOTAL_MULTIPLE == 465
-    assert ladder.cycle_total_paise(100) == 46500
+def test_cycle_total_multiple_is_5050():
+    assert ladder.CYCLE_TOTAL_MULTIPLE == 5050
+    assert ladder.cycle_total_paise(100) == 505000
 
 
 def test_no_accrual_exceeds_the_mandate_ceiling():
     ceiling = ladder.mandate_max_paise(STEP)
-    assert all(ladder.accrual_for_date(STEP, d(i), ANCHOR) <= ceiling for i in range(90))
+    assert all(ladder.accrual_for_date(STEP, d(i), ANCHOR) <= ceiling for i in range(300))
 
 
 # ---------- due_paise ----------
@@ -179,9 +179,14 @@ def test_weekly_sweep_collects_a_whole_week():
     assert ladder.due_paise(rows) == 28 * STEP
 
 
-def test_monthly_sweep_collects_a_full_cycle():
+def test_monthly_sweep_collects_a_full_month():
     rows = _rows(30)
     assert ladder.should_sweep(d(30), "monthly", ANCHOR)
+    assert ladder.due_paise(rows) == 465 * STEP
+
+
+def test_full_cycle_total():
+    rows = _rows(100)
     assert ladder.due_paise(rows) == ladder.cycle_total_paise(STEP)
 
 

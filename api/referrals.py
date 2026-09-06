@@ -82,3 +82,51 @@ def student_savings_milestone(cycle_start, total_saved_paise: int = 0, now: Opti
         "expires_at": (start_date + timedelta(days=STUDENT_CYCLE_DAYS)).isoformat(),
     }
 
+
+INTERN_TIERS = [
+    {"tier": 1, "leads_required": 10, "stipend_inr": 500, "title": "Field Scout", "certificate": "Bronze"},
+    {"tier": 2, "leads_required": 25, "stipend_inr": 1500, "title": "Growth Associate", "certificate": "Silver"},
+    {"tier": 3, "leads_required": 50, "stipend_inr": 3500, "title": "Lead Lead Ambassador", "certificate": "Gold Excellence"},
+]
+
+
+def intern_milestone_status(verified_leads: int) -> dict:
+    """Calculate the intern's progress toward milestone stipend tiers."""
+    current_tier = None
+    next_tier = INTERN_TIERS[0]
+    unlocked_stipend = 0
+
+    for t in INTERN_TIERS:
+        if verified_leads >= t["leads_required"]:
+            current_tier = t
+            unlocked_stipend = t["stipend_inr"]
+        elif next_tier == INTERN_TIERS[0] or next_tier["leads_required"] <= t["leads_required"]:
+            if verified_leads < t["leads_required"] and (current_tier is None or t["tier"] > current_tier["tier"]):
+                next_tier = t
+                break
+
+    target_leads = next_tier["leads_required"] if next_tier else INTERN_TIERS[-1]["leads_required"]
+    progress_pct = min(100, round((verified_leads / target_leads) * 100)) if target_leads > 0 else 0
+
+    return {
+        "verified_leads": verified_leads,
+        "current_tier": current_tier,
+        "next_tier": next_tier,
+        "unlocked_stipend_inr": unlocked_stipend,
+        "progress_pct": progress_pct,
+        "all_tiers": INTERN_TIERS,
+    }
+
+
+def partner_commission_paise(order_amount_paise: int, is_subscription: bool = False) -> int:
+    """Partner earning rate: 5% on seafood orders, fixed ₹50 on new Kudam subscriber."""
+    if is_subscription:
+        return 5000  # ₹50
+    return max(0, round(order_amount_paise * 0.05))
+
+
+def shopper_royalty_points(order_amount_paise: int) -> int:
+    """Shopper reward: 1 royalty point per ₹100 spent on fresh catch."""
+    return max(0, order_amount_paise // 10000)
+
+

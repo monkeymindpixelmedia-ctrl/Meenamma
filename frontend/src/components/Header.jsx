@@ -8,7 +8,12 @@ const links = [
   { to: "/home", label: "Home" },
   { to: "/dashboard", label: "Daily Kudam" },
   { to: "/market", label: "Fresh Catch" },
-  { to: "/referral", label: "Refer" },
+  { to: "/referral", label: "Points" },
+];
+
+const portalLinks = [
+  { href: "https://earn.meenamma.org", label: "Partner Earn" },
+  { href: "https://referrals.meenamma.org", label: "Interns" },
 ];
 
 export default function Header() {
@@ -42,11 +47,11 @@ export default function Header() {
         </motion.button>
 
         {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-12">
+        <nav className="hidden md:flex items-center gap-8 lg:gap-10">
           {links.map((l) => {
             let displayLabel = l.label;
             if (l.to === "/referral") {
-              displayLabel = user?.account_type === "student" ? "Partner Hub" : "Refer & Points";
+              displayLabel = user?.account_type === "student" ? "Partner Hub" : "Points";
             }
             return (
               <NavLink
@@ -63,6 +68,18 @@ export default function Header() {
               </NavLink>
             );
           })}
+          <div className="h-3 w-px bg-obsidian/15 mx-1" />
+          {portalLinks.map((p) => (
+            <a
+              key={p.href}
+              href={p.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] uppercase tracking-luxury text-obsidian/50 hover:text-obsidian transition-colors font-mono"
+            >
+              {p.label} ↗
+            </a>
+          ))}
         </nav>
 
         {/* Right Actions & Hamburger Toggle */}
@@ -143,6 +160,22 @@ export default function Header() {
                   {l.label}
                 </NavLink>
               ))}
+
+              <div className="pt-2 border-t border-obsidian/10 flex flex-col space-y-2">
+                <span className="text-[10px] uppercase font-mono text-obsidian/40 tracking-wider">Subdomain Portals</span>
+                {portalLinks.map((p) => (
+                  <a
+                    key={p.href}
+                    href={p.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setMenuOpen(false)}
+                    className="text-xs uppercase tracking-luxury text-obsidian/70 hover:text-obsidian font-mono py-1"
+                  >
+                    {p.label} ↗
+                  </a>
+                ))}
+              </div>
 
               {user && (
                 <button

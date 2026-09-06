@@ -408,7 +408,7 @@ def test_provider_update_failure_isolated_and_debt_stays_unsettled(monkeypatch):
 def test_balance_above_mandate_ceiling_duns_without_provider_call(monkeypatch):
     profile = _profile("u1", step=100)
     debt = [{"id": "old", "profile_id": "u1", "debit_date": "2026-07-01",
-             "amount_paise": 46_501, "settled_at": None}]
+             "amount_paise": 505_001, "settled_at": None}]
     db = MemorySupabase(
         profiles=[profile], autopay_accruals=debt, notification_outbox=[])
     edits = []
@@ -572,3 +572,63 @@ def test_delete_kudam_last_vessel_autopay_blocked(monkeypatch):
     index.delete_kudam("k1", {"id": "u1", "autopay_status": "active"})
     assert len(db2.rows["kudams"]) == 1
     assert db2.rows["kudams"][0]["id"] == "k2"
+
+
+def test_token_based_recurring_debit_on_sweep_day(monkeypatch):
+    """When a profile has a razorpay_token_id, the sweep day triggers createRecurring with the exact due balance."""
+    profile = {
+        "id": "u_token",
+        "email": "token_user@meenamma.org",
+        "display_name": "Token Saver",
+        "phone_e164": "+919999999999",
+        "autopay_status": "active",
+        "autopay_cadence": "weekly",
+        "step_paise": 100,
+        "cycle_anchor_date": "2026-08-14",
+        "razorpay_token_id": "token_live_123",
+        "razorpay_customer_id": "cust_live_123",
+        "autopay_subscription_id": None
+    }
+    # Days 1 to 7 = 100 to 700 paise (sum = 2800 paise = Rs 28)
+    accruals = [
+        {"id": f"acc_{i}", "profile_id": "u_token", "debit_date": f"2026-08-{13+i:02d}",
+         "amount_paise": i * 100, "settled_at": None}
+        for i in range(1, 8)
+    ]
+    kudam = {"id": "k_token", "profile_id": "u_token", "name": "Kudam", "saved_paise": 0, "status": "active"}
+    db = MemorySupabase(
+        profiles=[profile],
+        autopay_accruals=accruals,
+        kudams=[kudam],
+        kudam_deposits=[],
+        notification_outbox=[]
+    )
+    monkeypatch.setattr(index, "sb", db)
+    monkeypatch.setattr(index, "_settle_autopay_payment", lambda pid, pay: True)
+    monkeypatch.setattr(index, "drain_notification_outbox", lambda _sb: {"sent": 1, "failed": 0})
+
+    created_orders = []
+    def fake_create_order(payload):
+        created_orders.append(payload)
+        return {"id": "order_rec_123"}
+    monkeypatch.setattr(index.rzp.order, "create", fake_create_order)
+
+    recurring_calls = []
+    def fake_create_recurring(payload):
+        recurring_calls.append(payload)
+        return {"id": "pay_rec_123", "status": "captured", "amount": payload["amount"]}
+    monkeypatch.setattr(index.rzp.payment, "createRecurring", fake_create_recurring)
+
+    # Day 8 after anchor (2026-08-21) is sweep day for weekly cadence
+    sweep_date = date(2026, 8, 21)
+    outcome = index._sweep_profile(profile, sweep_date)
+
+    assert outcome == "scheduled"
+    assert len(created_orders) == 1
+    assert created_orders[0]["amount"] == 2800  # 28 INR
+    assert created_orders[0]["customer_id"] == "cust_live_123"
+
+    assert len(recurring_calls) == 1
+    assert recurring_calls[0]["amount"] == 2800
+    assert recurring_calls[0]["token"] == "token_live_123"
+

@@ -1,9 +1,16 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Pencil, Trash2, Upload, Sparkles, Shield, RefreshCw } from "lucide-react";
+import { Plus, Pencil, Trash2, Upload, Sparkles, Shield, RefreshCw, Truck, Package, CheckCircle, Clock, MapPin, Send } from "lucide-react";
 import { api, formatApiErrorDetail, imgUrl } from "../lib/api";
+import {
+  fetchStockPoints,
+  fetchStockShipments,
+  dispatchStockShipment,
+  fetchLiveInventories,
+  fetchLogisticsAuditLogs,
+} from "../lib/logisticsSync";
 
-const TABS = ["Overview", "Products", "Orders", "Kudams", "Customers", "WhatsApp"];
+const TABS = ["Overview", "Products", "Orders", "Kudams", "Customers", "WhatsApp", "Logistics & Hubs"];
 const EMPTY = { name: "", tamil_name: "", price_per_kg: "", image: "", origin: "", story: "", handling: "", available: true };
 const STATUSES = ["confirmed", "ready", "delivered", "cancelled"];
 
@@ -183,6 +190,412 @@ function WhatsAppPanel() {
           {busy ? "Disconnecting…" : "Disconnect Device"}
         </button>
       )}
+    </div>
+  );
+}
+
+function LogisticsPanel({ products }) {
+  const [stockPoints, setStockPoints] = useState([]);
+  const [shipments, setShipments] = useState([]);
+  const [inventories, setInventories] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dispatching, setDispatching] = useState(false);
+  const [feedback, setFeedback] = useState("");
+
+  // Default fallback fish catalog if products empty
+  const fishCatalog = products && products.length > 0
+    ? products
+    : [
+        { name: "Vanjaram (Seer Fish)", price_per_kg: 850 },
+        { name: "White Pomfret (Vavval)", price_per_kg: 750 },
+        { name: "Tiger Prawns (Iral)", price_per_kg: 600 },
+        { name: "Sankara (Red Snapper)", price_per_kg: 450 },
+      ];
+
+  // Multi-person allocation state
+  const [selectedHubs, setSelectedHubs] = useState({});
+  const [hubAllocations, setHubAllocations] = useState({});
+
+  const refreshLogistics = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [points, ships, invs, logs] = await Promise.all([
+        fetchStockPoints(),
+        fetchStockShipments(),
+        fetchLiveInventories(),
+        fetchLogisticsAuditLogs(),
+      ]);
+      setStockPoints(points);
+      setShipments(ships);
+      setInventories(invs);
+      setAuditLogs(logs);
+
+      // Initialize default allocations for hubs
+      const initialSelected = {};
+      const initialAlloc = {};
+      points.forEach((p, idx) => {
+        initialSelected[p.id] = idx < 2; // select first two by default (e.g. Ramesh & Suresh)
+        initialAlloc[p.id] = {
+          fish_name: fishCatalog[0]?.name || "Vanjaram (Seer Fish)",
+          count: idx === 0 ? 1 : 2, // 1 fish for Ramesh, 2 fish for Suresh
+          kg: idx === 0 ? 2.5 : 4.0,
+        };
+      });
+      setSelectedHubs((prev) => (Object.keys(prev).length ? prev : initialSelected));
+      setHubAllocations((prev) => (Object.keys(prev).length ? prev : initialAlloc));
+    } catch (err) {
+      console.error("Failed to load logistics data:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [fishCatalog]);
+
+  useEffect(() => {
+    refreshLogistics();
+  }, [refreshLogistics]);
+
+  const toggleHubSelection = (hubId) => {
+    setSelectedHubs((prev) => ({ ...prev, [hubId]: !prev[hubId] }));
+  };
+
+  const updateAllocation = (hubId, field, value) => {
+    setHubAllocations((prev) => ({
+      ...prev,
+      [hubId]: {
+        ...(prev[hubId] || { fish_name: fishCatalog[0]?.name, count: 1, kg: 1.0 }),
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleDispatch = async () => {
+    const targetHubs = stockPoints.filter((p) => selectedHubs[p.id]);
+    if (targetHubs.length === 0) {
+      alert("Please select at least one stock owner to ship fish to.");
+      return;
+    }
+
+    setDispatching(true);
+    setFeedback("");
+    try {
+      for (const hub of targetHubs) {
+        const alloc = hubAllocations[hub.id] || {
+          fish_name: fishCatalog[0]?.name,
+          count: 1,
+          kg: 2.0,
+        };
+        await dispatchStockShipment({
+          hubId: hub.id,
+          ownerName: hub.owner_name,
+          pincode: hub.pincode,
+          items: [
+            {
+              fish_name: alloc.fish_name,
+              count: Number(alloc.count),
+              kg: Number(alloc.kg),
+              price_per_kg: 850,
+            },
+          ],
+          notes: `Batch Harbor Dispatch to ${hub.owner_name} (${hub.pincode})`,
+        });
+      }
+      setFeedback(`Shipment successfully dispatched to ${targetHubs.map((h) => h.owner_name).join(", ")}!`);
+      await refreshLogistics();
+    } catch (err) {
+      setFeedback("Failed to dispatch shipment: " + err.message);
+    } finally {
+      setDispatching(false);
+    }
+  };
+
+  return (
+    <div className="space-y-8" data-testid="logistics-panel">
+      {/* Header & Overview */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-obsidian-canvas/80 border border-gold/20 p-6 rounded-2xl shadow-2xl">
+        <div>
+          <div className="flex items-center gap-2 text-gold text-xs uppercase tracking-widest font-mono">
+            <Truck size={16} /> Hyperlocal Logistics & Stock Hubs
+          </div>
+          <h2 className="font-serif text-2xl text-gold-gradient mt-1">Multi-Stock Harbor Dispatcher</h2>
+          <p className="text-xs text-[#A8A090] mt-1 max-w-2xl">
+            Allocate morning catch directly to local stock point owners. Live two-way sync updates stock when owners click "Yes, I got the food", matching PIN codes for customer orders and riders.
+          </p>
+        </div>
+        <button
+          onClick={refreshLogistics}
+          disabled={loading}
+          className="btn-cyber-outline !py-2 !px-4 flex items-center gap-2 text-xs"
+        >
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh Logistics
+        </button>
+      </div>
+
+      {feedback && (
+        <div className="p-4 rounded-xl bg-gold/10 border border-gold/40 text-gold-bright text-xs flex items-center gap-2">
+          <CheckCircle size={16} /> {feedback}
+        </div>
+      )}
+
+      {/* SECTION 1: Multi-Stock Allocation Dispatcher */}
+      <div className="glass-card-dark border-filigree-gold p-6 rounded-2xl shadow-2xl space-y-6">
+        <div className="flex items-center justify-between border-b border-gold/15 pb-3">
+          <div>
+            <h3 className="font-serif text-lg text-gold-gradient flex items-center gap-2">
+              <Package size={18} className="text-gold" /> Step 1: Select Stock Owners & Fill Inventory
+            </h3>
+            <p className="text-[11px] text-[#A8A090] mt-0.5">
+              Select stock points (e.g. Ramesh, Suresh) and assign individual fish counts and kilograms.
+            </p>
+          </div>
+          <span className="badge-gold text-[10px]">PIN Code Routing</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {stockPoints.map((hub) => {
+            const isSelected = !!selectedHubs[hub.id];
+            const alloc = hubAllocations[hub.id] || {
+              fish_name: fishCatalog[0]?.name,
+              count: 1,
+              kg: 2.0,
+            };
+
+            return (
+              <div
+                key={hub.id}
+                className={`p-4 rounded-xl border transition-all duration-300 ${
+                  isSelected
+                    ? "bg-gold/10 border-gold shadow-[0_0_15px_rgba(255,215,0,0.15)]"
+                    : "bg-obsidian-canvas/40 border-gold/15 opacity-70 hover:opacity-100"
+                }`}
+              >
+                <div className="flex items-start justify-between">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleHubSelection(hub.id)}
+                      className="accent-[#FFD700] w-4 h-4 rounded"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-[#F5F2EB]">{hub.owner_name}</p>
+                      <p className="text-[10px] text-[#A8A090]">{hub.name}</p>
+                    </div>
+                  </label>
+                  <span className="badge-emerald text-[9px] font-mono flex items-center gap-1">
+                    <MapPin size={10} /> PIN {hub.pincode}
+                  </span>
+                </div>
+
+                {isSelected && (
+                  <div className="mt-4 pt-3 border-t border-gold/15 space-y-3">
+                    <div>
+                      <label className="text-[9px] uppercase tracking-widest text-[#A8A090] block mb-1">
+                        Select Fish Type
+                      </label>
+                      <select
+                        value={alloc.fish_name}
+                        onChange={(e) => updateAllocation(hub.id, "fish_name", e.target.value)}
+                        className="input-cyberpunk w-full text-xs py-1.5"
+                      >
+                        {fishCatalog.map((f) => (
+                          <option key={f.name} value={f.name} className="bg-[#0b0c10] text-[#F5F2EB]">
+                            {f.name} (₹{f.price_per_kg}/kg)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[9px] uppercase tracking-widest text-[#A8A090] block mb-1">
+                          Fish Count (Nos)
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="50"
+                          value={alloc.count}
+                          onChange={(e) => updateAllocation(hub.id, "count", e.target.value)}
+                          className="input-cyberpunk w-full text-xs py-1.5 font-mono"
+                          placeholder="1 fish"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] uppercase tracking-widest text-[#A8A090] block mb-1">
+                          Weight (Kg)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0.5"
+                          max="100"
+                          value={alloc.kg}
+                          onChange={(e) => updateAllocation(hub.id, "kg", e.target.value)}
+                          className="input-cyberpunk w-full text-xs py-1.5 font-mono"
+                          placeholder="2.5 kg"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <button
+            onClick={handleDispatch}
+            disabled={dispatching}
+            className="btn-gold-cyber !py-3 !px-8 text-xs font-semibold uppercase tracking-wider flex items-center gap-2 shadow-lg"
+          >
+            {dispatching ? (
+              <>
+                <RefreshCw size={14} className="animate-spin" /> Dispatching Shipments…
+              </>
+            ) : (
+              <>
+                <Send size={14} /> Dispatch Fish Shipments
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* SECTION 2: Live Stock Points & Live Inventory */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Hubs & Live Inventory */}
+        <div className="glass-card-dark border-filigree-gold p-6 rounded-2xl shadow-2xl space-y-4">
+          <div className="flex items-center justify-between border-b border-gold/15 pb-3">
+            <h3 className="font-serif text-lg text-gold-gradient flex items-center gap-2">
+              <Package size={16} className="text-gold" /> Live Hub Inventory
+            </h3>
+            <span className="text-[10px] text-[#A8A090]">Auto-updated on receipt</span>
+          </div>
+
+          <div className="space-y-3">
+            {stockPoints.map((hub) => {
+              const inv = inventories.find((i) => i.hub_id === hub.id);
+              const items = inv?.items || [];
+
+              return (
+                <div key={hub.id} className="p-4 rounded-xl bg-obsidian-canvas/60 border border-gold/15 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-[#F5F2EB]">{hub.owner_name} · {hub.name}</p>
+                      <p className="text-[10px] text-[#A8A090] font-mono">{hub.phone} · {hub.address}</p>
+                    </div>
+                    <span className="badge-gold text-[10px] font-mono">PIN {hub.pincode}</span>
+                  </div>
+
+                  <div className="pt-2 border-t border-gold/10">
+                    <p className="text-[10px] uppercase tracking-wider text-gold-bright font-medium mb-1">
+                      Current Stock in Shop:
+                    </p>
+                    {items.length === 0 ? (
+                      <p className="text-xs text-[#A8A090] italic">No active stock recorded yet. Dispatched shipments will appear once confirmed by {hub.owner_name}.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2">
+                        {items.map((it, idx) => (
+                          <div key={idx} className="bg-[#0b0c10] p-2 rounded-lg border border-gold/20 text-xs flex justify-between items-center">
+                            <span className="text-[#F5F2EB]">{it.fish_name}</span>
+                            <span className="text-gold font-mono font-medium">{it.count} pcs ({it.kg} kg)</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Dispatched Shipments Queue */}
+        <div className="glass-card-dark border-filigree-gold p-6 rounded-2xl shadow-2xl space-y-4">
+          <div className="flex items-center justify-between border-b border-gold/15 pb-3">
+            <h3 className="font-serif text-lg text-gold-gradient flex items-center gap-2">
+              <Truck size={16} className="text-gold" /> Shipment Pipeline
+            </h3>
+            <span className="text-[10px] text-[#A8A090]">{shipments.length} Total</span>
+          </div>
+
+          <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+            {shipments.length === 0 ? (
+              <p className="text-xs text-[#A8A090] italic text-center py-8">No shipments dispatched yet.</p>
+            ) : (
+              shipments.map((s) => (
+                <div key={s.id} className="p-3.5 rounded-xl bg-obsidian-canvas/60 border border-gold/15 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs text-gold-bright font-semibold">#{s.shipment_id || s.id}</span>
+                      <span className="text-xs text-[#F5F2EB] font-medium">&rarr; {s.owner_name}</span>
+                      <span className="badge-gold text-[9px] font-mono">PIN {s.pincode}</span>
+                    </div>
+                    <p className="text-[11px] text-[#A8A090]">
+                      {(s.items || []).map((it) => `${it.count} ${it.fish_name} (${it.kg} kg)`).join(", ")}
+                    </p>
+                    <p className="text-[9px] text-[#A8A090]/70 font-mono">
+                      Dispatched: {s.dispatched_at ? new Date(s.dispatched_at).toLocaleTimeString() : "Just now"}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span
+                      className={`text-[9px] font-mono uppercase px-2.5 py-1 rounded-full border ${
+                        s.status === "received_at_hub"
+                          ? "bg-emerald-950/60 text-emerald-400 border-emerald-500/40"
+                          : "bg-amber-950/60 text-amber-400 border-amber-500/40 animate-pulse"
+                      }`}
+                    >
+                      {s.status === "received_at_hub" ? "Received at Hub" : "En Route to Hub"}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 3: Live Logistics Audit Trail */}
+      <div className="glass-card-dark border-filigree-gold p-6 rounded-2xl shadow-2xl space-y-4">
+        <div className="flex items-center justify-between border-b border-gold/15 pb-3">
+          <div>
+            <h3 className="font-serif text-lg text-gold-gradient flex items-center gap-2">
+              <Clock size={16} className="text-gold" /> Real-time Logistics Audit Trail
+            </h3>
+            <p className="text-[11px] text-[#A8A090] mt-0.5">
+              Live audit events: Admin dispatches, stock member receipts, rider pickups, and customer deliveries.
+            </p>
+          </div>
+          <span className="text-[10px] text-[#A8A090] font-mono">{auditLogs.length} Events Logged</span>
+        </div>
+
+        <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
+          {auditLogs.length === 0 ? (
+            <p className="text-xs text-[#A8A090] italic text-center py-6">No audit events recorded yet.</p>
+          ) : (
+            auditLogs.map((ev) => (
+              <div key={ev.id || ev.slug} className="p-3 rounded-lg bg-obsidian-canvas/50 border border-gold/10 flex items-start justify-between text-xs">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="badge-emerald text-[9px] font-mono">PIN {ev.pincode}</span>
+                    <span className="text-gold font-semibold">{ev.actor}</span>
+                    <span className="text-[10px] text-[#A8A090] font-mono">
+                      {ev.timestamp ? new Date(ev.timestamp).toLocaleString() : ""}
+                    </span>
+                  </div>
+                  <p className="text-[#F5F2EB]">{ev.description}</p>
+                </div>
+                <span className="font-mono text-[9px] uppercase px-2 py-0.5 rounded bg-gold/10 text-gold border border-gold/25">
+                  {ev.event_type}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -471,6 +884,8 @@ export default function Admin() {
               )}
 
               {tab === "WhatsApp" && <WhatsAppPanel />}
+
+              {tab === "Logistics & Hubs" && <LogisticsPanel products={products} />}
             </motion.div>
           </AnimatePresence>
         </div>

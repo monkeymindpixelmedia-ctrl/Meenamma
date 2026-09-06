@@ -146,6 +146,79 @@ export default function Dashboard() {
   const [cadence, setCadence] = useState(user?.autopay_cadence || "weekly");
   const [autopay, setAutopay] = useState(null);
 
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [phoneOtp, setPhoneOtp] = useState("");
+  const [phoneOtpSent, setPhoneOtpSent] = useState(false);
+  const [phoneTimer, setPhoneTimer] = useState(0);
+  const [phoneBusy, setPhoneBusy] = useState(false);
+  const [phoneError, setPhoneError] = useState("");
+
+  useEffect(() => {
+    if (phoneTimer <= 0) return;
+    const t = setInterval(() => setPhoneTimer((v) => v - 1), 1000);
+    return () => clearInterval(t);
+  }, [phoneTimer]);
+
+  const requestPhoneOtp = async (e) => {
+    e?.preventDefault();
+    const clean = phoneInput.replace(/[^0-9]/g, "");
+    if (clean.length < 10) {
+      setPhoneError("Please enter a valid 10-digit mobile number.");
+      return;
+    }
+    setPhoneBusy(true);
+    setPhoneError("");
+    try {
+      await api.post("/profile/phone/send-otp", { phone: clean });
+      setPhoneOtpSent(true);
+      setPhoneTimer(60);
+    } catch (err) {
+      setPhoneError(err.response?.data?.detail || err.message || "Failed sending verification code.");
+    } finally {
+      setPhoneBusy(false);
+    }
+  };
+
+  const verifyAndSavePhone = async (e) => {
+    e?.preventDefault();
+    if (!phoneOtp.trim()) {
+      setPhoneError("Please enter the 6-digit code.");
+      return;
+    }
+    setPhoneBusy(true);
+    setPhoneError("");
+    try {
+      const { data: updatedProfile } = await api.post("/profile/phone/verify", {
+        phone: phoneInput.replace(/[^0-9]/g, ""),
+        code: phoneOtp.trim(),
+      });
+      updateUser(updatedProfile);
+      setShowPhoneModal(false);
+      setPhoneOtpSent(false);
+      setPhoneOtp("");
+      setPhoneInput("");
+      setSuccess("Mobile number verified on WhatsApp!");
+      if (cadence !== "manual") {
+        setBusy(true);
+        try {
+          const updated = await setupAutopay(updatedProfile, { stepAmount, cadence });
+          updateUser(updated);
+          setAutopay(updated.autopay);
+          setSuccess(`Automatic savings active — settled ${cadence}.`);
+        } catch (err) {
+          setMsg(err.message || "Autopay setup failed");
+        } finally {
+          setBusy(false);
+        }
+      }
+    } catch (err) {
+      setPhoneError(err.response?.data?.detail || err.message || "Invalid or expired verification code.");
+    } finally {
+      setPhoneBusy(false);
+    }
+  };
+
   const load = useCallback(async () => {
     // 1. Fetch essential dashboard data first to make page load feel instantaneous
     try {
@@ -245,6 +318,11 @@ export default function Dashboard() {
 
   const enableAutopay = async () => {
     haptic();
+    const hasPhone = Boolean(user?.phone_e164 || user?.phone);
+    if (!hasPhone && cadence !== "manual") {
+      setShowPhoneModal(true);
+      return;
+    }
     setBusy(true);
     setMsg("");
     try {
@@ -369,6 +447,24 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+
+        {!user?.phone_e164 && !user?.phone && (
+          <div className="mt-6 p-4 border border-amber-400/40 bg-amber-50/70 flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <span className="text-xl">📱</span>
+              <div>
+                <p className="text-obsidian text-xs font-semibold">Link your WhatsApp Number</p>
+                <p className="text-obsidian/70 text-[11px] mt-0.5">Required for automated UPI Kudam mandates and morning harbor catch notifications.</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowPhoneModal(true)}
+              className="btn-obsidian !py-1.5 !px-4 text-xs font-mono tracking-wider"
+            >
+              Link Mobile
+            </button>
+          </div>
+        )}
 
         {kudams === null ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4 animate-pulse">
@@ -754,6 +850,107 @@ export default function Dashboard() {
         )}
 
         <AnimatePresence>
+          {showPhoneModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/70 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="card-white p-6 md:p-8 max-w-md w-full shadow-2xl relative border border-gold/30"
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowPhoneModal(false)}
+                  className="absolute top-4 right-4 text-obsidian/50 hover:text-obsidian text-sm"
+                >
+                  ✕
+                </button>
+                <div className="text-center mb-6">
+                  <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 text-xl">
+                    📱
+                  </div>
+                  <h3 className="font-serif text-obsidian text-xl font-medium">WhatsApp Mobile Required</h3>
+                  <p className="text-obsidian/70 text-xs mt-2 leading-relaxed">
+                    Under RBI regulations, automated UPI recurring mandates require a registered mobile number for mandate authorization and pre-debit alerts.
+                  </p>
+                </div>
+
+                <form onSubmit={phoneOtpSent ? verifyAndSavePhone : requestPhoneOtp} className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase tracking-wider text-obsidian/70 mb-1">
+                      10-Digit Mobile Number
+                    </label>
+                    <div className="relative flex items-center">
+                      <span className="absolute left-3 font-mono text-xs text-obsidian/60 font-bold select-none">
+                        +91
+                      </span>
+                      <input
+                        type="tel"
+                        maxLength="10"
+                        placeholder="9876543210"
+                        value={phoneInput}
+                        onChange={(e) => setPhoneInput(e.target.value.replace(/[^0-9]/g, ""))}
+                        disabled={phoneOtpSent}
+                        className="input-ritual pl-12 w-full font-mono text-sm"
+                        required
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  {phoneOtpSent && (
+                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-obsidian/70">
+                          6-Digit WhatsApp Code
+                        </label>
+                        {phoneTimer > 0 ? (
+                          <span className="text-[10px] font-mono text-obsidian/50">Resend in {phoneTimer}s</span>
+                        ) : (
+                          <button type="button" onClick={requestPhoneOtp} disabled={phoneBusy} className="text-[10px] font-mono text-gold underline">
+                            Resend code
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        maxLength="6"
+                        placeholder="••••••"
+                        value={phoneOtp}
+                        onChange={(e) => setPhoneOtp(e.target.value.replace(/[^0-9]/g, ""))}
+                        className="input-ritual text-center font-mono text-base tracking-[0.4em] w-full"
+                        required
+                        autoFocus
+                      />
+                    </motion.div>
+                  )}
+
+                  {phoneError && (
+                    <p className="text-red-700 text-xs font-serif italic">{phoneError}</p>
+                  )}
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowPhoneModal(false)}
+                      className="btn-gold-outline flex-1 !py-2.5 text-xs"
+                      disabled={phoneBusy}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn-obsidian flex-1 !py-2.5 text-xs font-medium"
+                      disabled={phoneBusy}
+                    >
+                      {phoneBusy ? "Please wait…" : phoneOtpSent ? "Verify & Proceed" : "Send WhatsApp OTP"}
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          )}
+
           {showCreate && kudams && kudams.length === 0 && (
             <motion.form
               initial={{ opacity: 0, y: 16 }}

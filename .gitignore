@@ -32,3 +32,13 @@ helloworld
 scratch/
 .temp/
 
+# Flutter & Mobile builds
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+*.iml
+
+

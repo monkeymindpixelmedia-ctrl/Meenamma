@@ -19,10 +19,10 @@ from datetime import date, timedelta
 
 _ONE_DAY = timedelta(days=1)
 
-# Ladder length. Day 30 accrues 30 * step, then the ladder resets to day 1.
-CYCLE_DAYS = 30
+# Ladder length. Day 100 accrues 100 * step, then the ladder resets to day 1.
+CYCLE_DAYS = 100
 
-# 1 + 2 + ... + 30 = 465. One full cycle costs 465 * step.
+# 1 + 2 + ... + 100 = 5050. One full cycle costs 5050 * step.
 CYCLE_TOTAL_MULTIPLE = CYCLE_DAYS * (CYCLE_DAYS + 1) // 2
 
 # Razorpay charges plan.item.amount * quantity. We use a shared plan priced at Rs 1 per unit

@@ -102,6 +102,24 @@ export function AuthProvider({ children }) {
     return refreshUser(data.session);
   };
 
+  const sendPhoneOtp = async (phone, purpose = "Sign In") => {
+    const { data } = await api.post("/auth/otp/send", { phone, purpose });
+    return data;
+  };
+
+  const loginWithPhoneOtp = async (phone, code) => {
+    const { data } = await api.post("/auth/otp/verify", { phone, code });
+    if (data?.token_hash) {
+      const { data: authData, error } = await supabase.auth.verifyOtp({
+        token_hash: data.token_hash,
+        type: "magiclink",
+      });
+      if (error) throw authError(error);
+      return refreshUser(authData?.session);
+    }
+    return refreshUser();
+  };
+
   const updateUser = (data) => setUser(data);
 
   const logout = async () => {
@@ -111,7 +129,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, loginWithGoogle, register, logout, updateUser, refreshUser }}>
+    <AuthContext.Provider value={{ user, login, loginWithGoogle, loginWithPhoneOtp, sendPhoneOtp, register, logout, updateUser, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
