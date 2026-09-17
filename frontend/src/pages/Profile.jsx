@@ -11,6 +11,7 @@ export default function Profile() {
   const { user, logout, updateUser } = useAuth();
   const navigate = useNavigate();
   const [name, setName] = useState(user?.name || "");
+  const [phone, setPhone] = useState(user?.phone || user?.phone_e164 || "");
   const [plan, setPlan] = useState(user?.daily_plan || 5);
   const [pincode, setPincode] = useState(user?.pincode || "");
   const [upi, setUpi] = useState(user?.upi_id || "");
@@ -37,7 +38,7 @@ export default function Profile() {
     setBusy(true);
     setMsg("");
     try {
-      const { data } = await api.patch("/me", { name, daily_plan: Number(plan), pincode, upi_id: upi });
+      const { data } = await api.patch("/me", { name, phone, daily_plan: Number(plan), pincode, upi_id: upi });
       updateUser(data);
       setMsg("Profile saved.");
     } catch (err) {
@@ -174,6 +175,26 @@ export default function Profile() {
           <div>
             <label className="text-obsidian/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>Email</label>
             <p className="text-obsidian/80 text-sm py-3 border-b border-gold/25" data-testid="profile-email">{user?.email}</p>
+          </div>
+          <div>
+            <label className="text-obsidian/70 text-[10px] uppercase flex justify-between" style={{ letterSpacing: "0.25em" }}>
+              <span>WhatsApp Phone</span>
+              {(!user?.phone && !user?.phone_e164) && (
+                <span className="text-amber-700 font-bold normal-case tracking-normal text-[10px]">
+                  * Required for WhatsApp OTP Reset
+                </span>
+              )}
+            </label>
+            <input
+              className="input-minimal"
+              placeholder="+91 98401 23456"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              data-testid="profile-phone-input"
+            />
+            <p className="text-[10px] text-obsidian/50 mt-1 font-serif italic">
+              Used for WhatsApp OTP login and instant password resets.
+            </p>
           </div>
           <div>
             <label className="text-obsidian/70 text-[10px] uppercase" style={{ letterSpacing: "0.25em" }}>Daily savings plan</label>

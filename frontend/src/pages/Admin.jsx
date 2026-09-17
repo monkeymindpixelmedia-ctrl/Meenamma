@@ -1,6 +1,26 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Pencil, Trash2, Upload, Sparkles, Shield, RefreshCw, Truck, Package, CheckCircle, Clock, MapPin, Send } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Upload,
+  Sparkles,
+  Shield,
+  RefreshCw,
+  Truck,
+  Package,
+  CheckCircle,
+  Clock,
+  MapPin,
+  Send,
+  UserPlus,
+  Users,
+  Share2,
+  Copy,
+  ExternalLink,
+  Store,
+} from "lucide-react";
 import { api, formatApiErrorDetail, imgUrl } from "../lib/api";
 import {
   fetchStockPoints,
@@ -10,7 +30,16 @@ import {
   fetchLogisticsAuditLogs,
 } from "../lib/logisticsSync";
 
-const TABS = ["Overview", "Products", "Orders", "Kudams", "Customers", "WhatsApp", "Logistics & Hubs"];
+const TABS = [
+  "Overview",
+  "Products",
+  "Orders",
+  "Kudams",
+  "Customers",
+  "Partner Network & Invites",
+  "WhatsApp",
+  "Logistics & Hubs",
+];
 const EMPTY = { name: "", tamil_name: "", price_per_kg: "", image: "", origin: "", story: "", handling: "", available: true };
 const STATUSES = ["confirmed", "ready", "delivered", "cancelled"];
 
@@ -600,6 +629,472 @@ function LogisticsPanel({ products }) {
   );
 }
 
+function PartnerNetworkPanel() {
+  const [metrics, setMetrics] = useState(null);
+  const [invites, setInvites] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [copiedCode, setCopiedCode] = useState("");
+
+  // New Invite Form State
+  const [inviteForm, setInviteForm] = useState({
+    role: "stock_agency",
+    name: "",
+    phone: "",
+    email: "",
+    hub_name: "",
+    pincode: "",
+    vehicle: "",
+    custom_details: "",
+    dispatch_whatsapp: true,
+  });
+
+  const [lastGeneratedInvite, setLastGeneratedInvite] = useState(null);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [mRes, iRes] = await Promise.all([
+        api.get("/admin/partner-metrics"),
+        api.get("/admin/invites"),
+      ]);
+      setMetrics(mRes.data);
+      setInvites(iRes.data || []);
+    } catch (err) {
+      console.error("Failed to load partner network data:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleCreateInvite = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setFeedback("");
+    try {
+      const { data } = await api.post("/admin/invites/create", inviteForm);
+      if (data.ok) {
+        setLastGeneratedInvite({
+          code: data.invite_code,
+          phone: inviteForm.phone,
+          name: inviteForm.name,
+          role: inviteForm.role,
+          whatsapp_sent: data.whatsapp_sent,
+        });
+        setFeedback(
+          data.whatsapp_sent
+            ? `Invite code ${data.invite_code} generated and dispatched via WhatsApp!`
+            : `Invite code ${data.invite_code} generated! You can copy and share it directly.`
+        );
+        // Reset inputs partially
+        setInviteForm({
+          ...inviteForm,
+          name: "",
+          phone: "",
+          email: "",
+          hub_name: "",
+          pincode: "",
+          vehicle: "",
+          custom_details: "",
+        });
+        loadData();
+      }
+    } catch (err) {
+      setFeedback(formatApiErrorDetail(err.response?.data?.detail) || "Failed to create invite");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    setCopiedCode(text);
+    setTimeout(() => setCopiedCode(""), 2000);
+  };
+
+  const roleLabels = {
+    stock_agency: "Stock Hub Agency",
+    delivery_rider: "Delivery Fleet Partner",
+    referral_partner: "Referral Creator / Group Admin",
+    student_worker: "Student & Workplace Intern",
+  };
+
+  return (
+    <div className="space-y-8 max-w-6xl mx-auto" data-testid="partner-network-panel">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#070605] border border-gold/25 p-6 rounded-2xl">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="font-serif text-2xl text-gold-gradient font-medium">Partner Network & Onboarding</h2>
+            <span className="badge-gold">LIVE SYNC</span>
+          </div>
+          <p className="text-xs text-[#A8A090] mt-1 font-light">
+            Generate verified invitation codes for Stock Hubs, Delivery Riders, and Social Promoters. Real-time WhatsApp sync.
+          </p>
+        </div>
+        <button
+          onClick={loadData}
+          disabled={loading}
+          className="btn-cyber-outline !py-2 !px-4 flex items-center gap-2 text-xs"
+        >
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh Metrics
+        </button>
+      </div>
+
+      {/* Metrics Row */}
+      {metrics && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="glass-card-dark border-filigree-gold p-5 rounded-xl text-center">
+            <p className="num-lg text-gold-gradient text-3xl font-light">{metrics.total_customers}</p>
+            <p className="text-[#A8A090] text-[9px] uppercase mt-1 tracking-widest">Active Customer Accounts</p>
+          </div>
+          <div className="glass-card-dark border-filigree-gold p-5 rounded-xl text-center">
+            <p className="num-lg text-gold-gradient text-3xl font-light">{metrics.total_referral_partners}</p>
+            <p className="text-[#A8A090] text-[9px] uppercase mt-1 tracking-widest">Referral Promoters</p>
+          </div>
+          <div className="glass-card-dark border-filigree-gold p-5 rounded-xl text-center">
+            <p className="num-lg text-gold-gradient text-3xl font-light">{metrics.total_subaccounts}</p>
+            <p className="text-[#A8A090] text-[9px] uppercase mt-1 tracking-widest">Subscriber Subaccounts</p>
+          </div>
+          <div className="glass-card-dark border-filigree-gold p-5 rounded-xl text-center">
+            <p className="num-lg text-emerald-400 text-3xl font-light">
+              {metrics.stock_hubs_count + metrics.delivery_riders_count}
+            </p>
+            <p className="text-[#A8A090] text-[9px] uppercase mt-1 tracking-widest">Active Hubs & Fleet</p>
+          </div>
+        </div>
+      )}
+
+      {/* Invite Generator & Last Created Card */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Create Invite Form */}
+        <div className="lg:col-span-2 glass-card-dark border-filigree-gold p-6 rounded-2xl shadow-xl">
+          <div className="flex items-center gap-2 border-b border-gold/15 pb-3 mb-5">
+            <UserPlus size={18} className="text-gold" />
+            <h3 className="font-serif text-lg text-gold-gradient font-medium">Create New Partner Invite</h3>
+          </div>
+
+          <form onSubmit={handleCreateInvite} className="space-y-4">
+            <div>
+              <label className="text-[10px] uppercase tracking-widest text-[#A8A090] block mb-1">
+                Select Partner Role
+              </label>
+              <select
+                className="input-cyberpunk w-full bg-[#070605] text-gold-bright"
+                value={inviteForm.role}
+                onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value })}
+              >
+                <option value="stock_agency">🏪 Stock Hub Agency (Local Distribution Point)</option>
+                <option value="delivery_rider">🛵 Delivery Fleet Partner (Neighborhood Rider)</option>
+                <option value="referral_partner">📣 Referral Creator / Group Admin (Link Generator)</option>
+                <option value="student_worker">🎓 Student & Workplace Intern (Gig Worker)</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[10px] uppercase tracking-widest text-[#A8A090] block mb-1">
+                  Full Name / Contact Person
+                </label>
+                <input
+                  className="input-cyberpunk w-full"
+                  placeholder="e.g. Ramesh Kumar"
+                  value={inviteForm.name}
+                  onChange={(e) => setInviteForm({ ...inviteForm, name: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase tracking-widest text-[#A8A090] block mb-1">
+                  WhatsApp Mobile Number
+                </label>
+                <input
+                  className="input-cyberpunk w-full"
+                  placeholder="e.g. 9840123456"
+                  value={inviteForm.phone}
+                  onChange={(e) => setInviteForm({ ...inviteForm, phone: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Role Specific Dynamic Fields */}
+            {inviteForm.role === "stock_agency" && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-obsidian-canvas/60 p-4 rounded-xl border border-gold/15">
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest text-[#A8A090] block mb-1">
+                    Hub / Agency Name
+                  </label>
+                  <input
+                    className="input-cyberpunk w-full"
+                    placeholder="e.g. Ramesh Seafood Hub"
+                    value={inviteForm.hub_name}
+                    onChange={(e) => setInviteForm({ ...inviteForm, hub_name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest text-[#A8A090] block mb-1">
+                    Assigned PIN Code
+                  </label>
+                  <input
+                    className="input-cyberpunk w-full font-mono"
+                    placeholder="e.g. 600028"
+                    value={inviteForm.pincode}
+                    onChange={(e) => setInviteForm({ ...inviteForm, pincode: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
+
+            {inviteForm.role === "delivery_rider" && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-obsidian-canvas/60 p-4 rounded-xl border border-gold/15">
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest text-[#A8A090] block mb-1">
+                    Delivery Zone PIN Code
+                  </label>
+                  <input
+                    className="input-cyberpunk w-full font-mono"
+                    placeholder="e.g. 600028"
+                    value={inviteForm.pincode}
+                    onChange={(e) => setInviteForm({ ...inviteForm, pincode: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest text-[#A8A090] block mb-1">
+                    Vehicle Type / Reg No
+                  </label>
+                  <input
+                    className="input-cyberpunk w-full"
+                    placeholder="e.g. Electric Scooter (TN-07-CS-4021)"
+                    value={inviteForm.vehicle}
+                    onChange={(e) => setInviteForm({ ...inviteForm, vehicle: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
+
+            <label className="flex items-center gap-3 text-xs text-[#F5F2EB]/80 cursor-pointer pt-1">
+              <input
+                type="checkbox"
+                checked={inviteForm.dispatch_whatsapp}
+                onChange={(e) => setInviteForm({ ...inviteForm, dispatch_whatsapp: e.target.checked })}
+                className="accent-[#FFD700] w-4 h-4 rounded"
+              />
+              <span>Send official invite message & instructions directly to their WhatsApp number</span>
+            </label>
+
+            {feedback && (
+              <p className="text-xs italic font-serif p-3 rounded-lg bg-gold/10 text-gold-bright border border-gold/25">
+                {feedback}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={busy}
+              className="btn-gold-cyber w-full flex items-center justify-center gap-2 !py-3 shadow-lg"
+            >
+              <Send size={16} /> {busy ? "Generating & Sending…" : "Generate Invite & Send WhatsApp"}
+            </button>
+          </form>
+        </div>
+
+        {/* Live Invitation Code Output Preview */}
+        <div className="glass-card-dark border-filigree-gold p-6 rounded-2xl flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2 border-b border-gold/15 pb-3 mb-4">
+              <Share2 size={16} className="text-gold" />
+              <h3 className="font-serif text-sm text-gold-gradient uppercase tracking-widest font-medium">
+                Latest Invite Code
+              </h3>
+            </div>
+
+            {lastGeneratedInvite ? (
+              <div className="space-y-4">
+                <div className="bg-[#070605] p-5 rounded-xl border border-gold/30 text-center">
+                  <p className="text-[10px] uppercase tracking-widest text-[#A8A090]">Admin Invite Code</p>
+                  <p className="text-3xl font-mono text-gold-bright font-bold tracking-widest my-2">
+                    {lastGeneratedInvite.code}
+                  </p>
+                  <span className="badge-emerald">{roleLabels[lastGeneratedInvite.role] || "Partner"}</span>
+                </div>
+
+                <div className="text-xs text-[#A8A090] space-y-1 bg-obsidian-canvas/60 p-3 rounded-lg border border-gold/15">
+                  <p>
+                    <strong className="text-gold-dim">Invitee:</strong> {lastGeneratedInvite.name}
+                  </p>
+                  <p>
+                    <strong className="text-gold-dim">WhatsApp:</strong> {lastGeneratedInvite.phone}
+                  </p>
+                  <p>
+                    <strong className="text-gold-dim">WhatsApp Sent:</strong>{" "}
+                    {lastGeneratedInvite.whatsapp_sent ? "✅ Delivered" : "⚠️ Manual Share"}
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => copyToClipboard(lastGeneratedInvite.code)}
+                    className="btn-cyber-outline flex-1 flex items-center justify-center gap-1.5 text-xs !py-2"
+                  >
+                    <Copy size={13} /> {copiedCode === lastGeneratedInvite.code ? "Copied!" : "Copy Code"}
+                  </button>
+                  <a
+                    href={`https://wa.me/91${lastGeneratedInvite.phone.replace(/[^0-9]/g, "").slice(-10)}?text=${encodeURIComponent(
+                      `Vanakkam ${lastGeneratedInvite.name}, here is your Meenamma Admin Invite Code: ${lastGeneratedInvite.code}. Enter this code in the app to activate your account.`
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-gold-cyber flex-1 flex items-center justify-center gap-1.5 text-xs !py-2"
+                  >
+                    <Send size={13} /> WhatsApp
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-12 text-[#A8A090] text-xs font-serif italic">
+                Generate an invite to view and copy the short activation code here.
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-gold/15 text-[10px] text-[#A8A090]/80">
+            💡 Partners install the app, tap &quot;Enter Admin Code&quot;, type their invite code, and complete their WhatsApp OTP verification.
+          </div>
+        </div>
+      </div>
+
+      {/* Referral Hierarchy & Conversion Trees */}
+      {metrics && metrics.referral_trees && (
+        <div className="glass-card-dark border-filigree-gold p-6 rounded-2xl shadow-xl">
+          <div className="flex items-center justify-between border-b border-gold/15 pb-3 mb-5">
+            <div className="flex items-center gap-2">
+              <Users size={18} className="text-gold" />
+              <h3 className="font-serif text-lg text-gold-gradient font-medium">
+                Referral Network & Subaccounts Hierarchy
+              </h3>
+            </div>
+            <span className="text-xs text-[#A8A090] font-mono">
+              {metrics.referral_trees.length} Active Promoters
+            </span>
+          </div>
+
+          {metrics.referral_trees.length === 0 ? (
+            <p className="text-center py-8 text-[#A8A090] text-xs font-serif italic">
+              No referral promoters have onboarded yet. Create a &apos;Referral Creator&apos; invite above.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {metrics.referral_trees.map((tree) => (
+                <div key={tree.id} className="bg-[#070605] p-5 rounded-xl border border-gold/20 space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-serif text-gold text-lg font-medium">{tree.name}</p>
+                      <p className="text-xs text-[#A8A090] font-mono mt-0.5">{tree.phone || "No phone"}</p>
+                    </div>
+                    <span className="badge-gold font-mono tracking-wider">{tree.referral_code}</span>
+                  </div>
+
+                  <div className="flex gap-4 text-xs text-[#A8A090] bg-obsidian-canvas/60 p-2.5 rounded-lg border border-gold/10">
+                    <div>
+                      <span className="text-gold-bright font-mono font-semibold">{tree.direct_customer_count}</span>
+                      <p className="text-[9px] uppercase tracking-wider">Direct Signups</p>
+                    </div>
+                    <div>
+                      <span className="text-emerald-400 font-mono font-semibold">{tree.subscribers_count}</span>
+                      <p className="text-[9px] uppercase tracking-wider">Kudam Subscribers</p>
+                    </div>
+                  </div>
+
+                  {tree.subscribers && tree.subscribers.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      <p className="text-[9px] uppercase tracking-widest text-[#A8A090]">Recent Enrolled Subscribers:</p>
+                      {tree.subscribers.slice(0, 3).map((sub, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-xs py-1 border-b border-gold/10">
+                          <span className="text-[#F5F2EB]">{sub.name}</span>
+                          <span className="text-gold-dim font-mono text-[11px]">
+                            Day {sub.cycle_day}/100 · ₹{sub.plan}/day
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Invitations History Table */}
+      <div className="glass-card-dark border-filigree-gold p-6 rounded-2xl shadow-xl">
+        <div className="flex items-center justify-between border-b border-gold/15 pb-3 mb-5">
+          <h3 className="font-serif text-lg text-gold-gradient font-medium">All Partner Invitations</h3>
+          <span className="text-xs text-[#A8A090] font-mono">{invites.length} Total Invites</span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-gold/20 text-[#A8A090] uppercase font-mono tracking-widest text-[9px]">
+                <th className="pb-3">Code</th>
+                <th className="pb-3">Name</th>
+                <th className="pb-3">Role</th>
+                <th className="pb-3">WhatsApp Phone</th>
+                <th className="pb-3">Status</th>
+                <th className="pb-3">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gold/10">
+              {invites.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-[#A8A090] font-serif italic">
+                    No partner invites created yet.
+                  </td>
+                </tr>
+              ) : (
+                invites.map((inv) => {
+                  const b = inv.body || {};
+                  const isClaimed = inv.status === "claimed";
+                  return (
+                    <tr key={inv.id} className="hover:bg-gold/5 transition-colors">
+                      <td className="py-3 font-mono text-gold-bright font-bold">{b.invite_code || inv.slug}</td>
+                      <td className="py-3 text-[#F5F2EB] font-medium">{b.name || inv.title}</td>
+                      <td className="py-3">
+                        <span className="badge-gold text-[10px]">{roleLabels[b.role] || b.role || "Partner"}</span>
+                      </td>
+                      <td className="py-3 font-mono text-[#A8A090]">{b.phone}</td>
+                      <td className="py-3">
+                        <span className={isClaimed ? "badge-emerald" : "badge-gold"}>
+                          {isClaimed ? "CLAIMED & ACTIVE" : "PENDING ONBOARDING"}
+                        </span>
+                      </td>
+                      <td className="py-3">
+                        <button
+                          onClick={() => copyToClipboard(b.invite_code)}
+                          className="text-gold-dim hover:text-gold transition-colors flex items-center gap-1 font-mono text-[10px]"
+                        >
+                          <Copy size={12} /> {copiedCode === b.invite_code ? "Copied" : "Copy"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Admin() {
   const [tab, setTab] = useState("Overview");
   const [stats, setStats] = useState(null);
@@ -882,6 +1377,8 @@ export default function Admin() {
                   ))}
                 </div>
               )}
+
+              {tab === "Partner Network & Invites" && <PartnerNetworkPanel />}
 
               {tab === "WhatsApp" && <WhatsAppPanel />}
 

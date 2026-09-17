@@ -1675,10 +1675,14 @@ def _cancel_razorpay_subscription(subscription_id: str) -> None:
     try:
         rzp.subscription.cancel(subscription_id)
     except Exception as e:
+        err_str = str(e).lower()
+        if "already cancelled" in err_str or "completed" in err_str:
+            return
         raise HTTPException(
             status_code=502,
             detail=f"Razorpay subscription cancellation failed: {e}",
         )
+
 
 
 def _ensure_razorpay_customer(user: dict) -> str:
@@ -2025,7 +2029,19 @@ def _sweep_profile(profile: dict, target_date: date) -> str:
                 "quantity": quantity, "schedule_change_at": "cycle_end",
                 "customer_notify": False,
             })
-        except Exception:
+        except Exception as err:
+            err_str = str(err).lower()
+            if "upi" in err_str:
+                try:
+                    _cancel_razorpay_subscription(profile["autopay_subscription_id"])
+                except Exception:
+                    pass
+                try:
+                    sb.table("profiles").update({
+                        "autopay_subscription_id": None,
+                    }).eq("id", profile["id"]).execute()
+                except Exception:
+                    pass
             _queue_autopay_event(
                 profile, "autopay_update_failed", debit_date,
                 amount=round(charge_paise / 100), debit_date=debit_date)
@@ -2443,22 +2459,485 @@ def admin_webhooks(admin: dict = Depends(get_admin_user)):
     return rows
 
 
+# ---------- Partner Invites, WhatsApp Authentication & Two-Way Sync ----------
+from api.whatsapp_service import (
+    get_whatsapp_status,
+    generate_whatsapp_otp,
+    verify_whatsapp_otp,
+    send_partner_invitation,
+    send_subscriber_dunning_alert,
+)
+
+
+class WhatsAppOtpSendIn(BaseModel):
+    phone: str
+    purpose: Optional[str] = "Authentication"
+
+
+class WhatsAppOtpVerifyIn(BaseModel):
+    phone: str
+    code: str
+
+
+class WhatsAppResetPasswordIn(BaseModel):
+    phone: str
+    code: str
+    new_password: str
+
+
+class PartnerInviteIn(BaseModel):
+    name: str
+    phone: str
+    role: str  # 'stock_agency', 'delivery_rider', 'referral_partner', 'student_worker'
+    email: Optional[str] = ""
+    hub_name: Optional[str] = ""
+    pincode: Optional[str] = ""
+    vehicle: Optional[str] = ""
+    custom_details: Optional[str] = ""
+    dispatch_whatsapp: Optional[bool] = True
+
+
+class PartnerClaimIn(BaseModel):
+    invite_code: str
+    email: str
+    password: str
+    phone: str
+    otp: str
+    full_name: Optional[str] = ""
+
+
 @api.get("/admin/whatsapp/status")
 def admin_whatsapp_status(admin: dict = Depends(get_admin_user)):
-    try:
-        resp = httpx.get("http://localhost:4000/status", timeout=3)
-        return resp.json()
-    except Exception as e:
-        return {"status": "DISCONNECTED", "qr": None, "error": str(e)}
+    return get_whatsapp_status()
 
 
 @api.post("/admin/whatsapp/logout")
 def admin_whatsapp_logout(admin: dict = Depends(get_admin_user)):
+    return {"status": "DISCONNECTED"}
+
+
+@api.post("/auth/whatsapp/otp/send")
+def auth_send_whatsapp_otp(body: WhatsAppOtpSendIn):
+    return generate_whatsapp_otp(body.phone, body.purpose or "Meenamma Authentication")
+
+
+@api.post("/auth/whatsapp/otp/verify")
+def auth_verify_whatsapp_otp(body: WhatsAppOtpVerifyIn):
+    valid = verify_whatsapp_otp(body.phone, body.code)
+    if not valid:
+        raise HTTPException(status_code=400, detail="Invalid or expired WhatsApp verification code")
+    return {"ok": True, "phone": body.phone}
+
+
+@api.post("/auth/whatsapp/reset-password")
+def auth_reset_password_via_whatsapp(body: WhatsAppResetPasswordIn):
+    valid = verify_whatsapp_otp(body.phone, body.code)
+    if not valid:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+
+    clean_digits = "".join(c for c in body.phone if c.isdigit())
+    last10 = clean_digits[-10:] if len(clean_digits) >= 10 else clean_digits
+
+    # Locate profile by phone number
+    profiles = (
+        sb.table("profiles")
+        .select("id, email, phone_e164")
+        .or_(f"phone_e164.like.%{last10}%,email.like.%{last10}%")
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not profiles:
+        raise HTTPException(
+            status_code=404, detail="No registered account found with this phone number."
+        )
+
+    user_id = profiles[0]["id"]
     try:
-        resp = httpx.post("http://localhost:4000/logout", timeout=3)
-        return resp.json()
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        admin_res = httpx.put(
+            f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}",
+            headers={
+                "apikey": service_key,
+                "Authorization": f"Bearer {service_key}",
+                "Content-Type": "application/json",
+            },
+            json={"password": body.new_password},
+            timeout=10.0,
+        )
+        if admin_res.status_code not in (200, 204):
+            raise HTTPException(
+                status_code=500, detail=f"Failed to update password: {admin_res.text}"
+            )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Could not reset password: {str(e)}")
+
+    return {"ok": True, "message": "Password updated successfully. You can now log in."}
+
+
+@api.post("/admin/invites/create")
+def admin_create_partner_invite(body: PartnerInviteIn, admin: dict = Depends(get_admin_user)):
+    prefix_map = {
+        "stock_agency": "STK",
+        "delivery_rider": "RDR",
+        "referral_partner": "REF",
+        "student_worker": "STU",
+    }
+    prefix = prefix_map.get(body.role, "PRT")
+    random_num = secrets.randbelow(9000) + 1000
+    invite_code = f"{prefix}-{random_num}"
+
+    title = f"{body.name} ({body.role.replace('_', ' ').title()})"
+    content_slug = f"invite_{invite_code.lower()}"
+
+    invite_data = {
+        "invite_code": invite_code,
+        "role": body.role,
+        "name": body.name,
+        "phone": body.phone,
+        "email": body.email or "",
+        "hub_name": body.hub_name or "",
+        "pincode": body.pincode or "",
+        "vehicle": body.vehicle or "",
+        "custom_details": body.custom_details or "",
+        "status": "pending",
+        "created_at": now_utc().isoformat(),
+        "claimed_at": None,
+        "claimed_by_uid": None,
+    }
+
+    row = {
+        "content_type": "partner_invitation",
+        "slug": content_slug,
+        "title": title,
+        "status": "published",
+        "created_by": admin["id"],
+        "body": invite_data,
+    }
+
+    inserted = sb.table("content_entries").insert(row).execute().data
+    if not inserted:
+        raise HTTPException(status_code=500, detail="Could not store invitation")
+
+    whatsapp_sent = False
+    if body.dispatch_whatsapp:
+        role_titles = {
+            "stock_agency": "Stock Hub Agency",
+            "delivery_rider": "Delivery Fleet Partner",
+            "referral_partner": "Referral Creator",
+            "student_worker": "Student & Workplace Intern",
+        }
+        role_label = role_titles.get(body.role, "Partner")
+        zone_info = f"PIN {body.pincode}" if body.pincode else (body.hub_name or "")
+        whatsapp_sent = send_partner_invitation(
+            phone=body.phone,
+            name=body.name,
+            role_title=role_label,
+            invite_code=invite_code,
+            extra_info=zone_info,
+        )
+
+    return {
+        "ok": True,
+        "invite_code": invite_code,
+        "invite": inserted[0],
+        "whatsapp_sent": whatsapp_sent,
+    }
+
+
+@api.get("/admin/invites")
+def admin_list_partner_invites(admin: dict = Depends(get_admin_user)):
+    rows = (
+        sb.table("content_entries")
+        .select("*")
+        .eq("content_type", "partner_invitation")
+        .order("created_at", desc=True)
+        .limit(200)
+        .execute()
+        .data
+    )
+    return rows
+
+
+@api.get("/invites/verify/{code}")
+def public_verify_invite(code: str):
+    clean_code = code.strip().upper()
+    slug = f"invite_{clean_code.lower()}"
+    rows = (
+        sb.table("content_entries")
+        .select("*")
+        .eq("content_type", "partner_invitation")
+        .eq("slug", slug)
+        .execute()
+        .data
+    )
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="Invitation code not found")
+
+    inv = rows[0]
+    inv_body = inv.get("body") or {}
+    if inv_body.get("status") == "claimed" or inv.get("status") == "claimed":
+        raise HTTPException(
+            status_code=400, detail="This invitation code has already been claimed."
+        )
+
+    return {"ok": True, "invite": inv_body}
+
+
+@api.post("/invites/claim")
+def public_claim_invite(body: PartnerClaimIn):
+    if not verify_whatsapp_otp(body.phone, body.otp):
+        raise HTTPException(status_code=400, detail="Invalid WhatsApp OTP")
+
+    clean_code = body.invite_code.strip().upper()
+    slug = f"invite_{clean_code.lower()}"
+    rows = (
+        sb.table("content_entries")
+        .select("*")
+        .eq("content_type", "partner_invitation")
+        .eq("slug", slug)
+        .execute()
+        .data
+    )
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    inv = rows[0]
+    inv_body = inv.get("body") or {}
+    if inv_body.get("status") == "claimed" or inv.get("status") == "claimed":
+        raise HTTPException(status_code=400, detail="Invite already claimed")
+
+    inv_body = inv["body"]
+    role = inv_body.get("role", "referral_partner")
+    display_name = body.full_name or inv_body.get("name") or "Partner"
+
+    user_id = None
+    access_token = None
+    service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    anon_key = os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+
+    try:
+        admin_res = httpx.post(
+            f"{SUPABASE_URL}/auth/v1/admin/users",
+            headers={
+                "apikey": service_key,
+                "Authorization": f"Bearer {service_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "email": body.email,
+                "password": body.password,
+                "phone": body.phone,
+                "email_confirm": True,
+                "phone_confirm": True,
+                "user_metadata": {
+                    "full_name": display_name,
+                    "role": role,
+                    "phone": body.phone,
+                },
+            },
+            timeout=10.0,
+        )
+        if admin_res.status_code in (200, 201):
+            user_data = admin_res.json()
+            user_id = user_data.get("id")
+        else:
+            token_res = httpx.post(
+                f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
+                headers={
+                    "apikey": anon_key,
+                    "Content-Type": "application/json",
+                },
+                json={"email": body.email, "password": body.password},
+                timeout=10.0,
+            )
+            if token_res.status_code == 200:
+                tok_data = token_res.json()
+                user_id = tok_data["user"]["id"]
+                access_token = tok_data.get("access_token")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Authentication setup error: {str(e)}")
+
+    if not user_id:
+        raise HTTPException(
+            status_code=400, detail="Could not create or link partner user account."
+        )
+
+    ref_code = f"MEEN-{user_id[:4].upper()}"
+    sb.table("profiles").upsert(
+        {
+            "id": user_id,
+            "display_name": display_name,
+            "email": body.email,
+            "phone_e164": body.phone,
+            "referral_code": ref_code,
+            "account_type": role,
+        }
+    ).execute()
+
+    if role == "stock_agency":
+        hub_slug = f"hub_{user_id[:8]}"
+        sb.table("content_entries").upsert(
+            {
+                "content_type": "stock_point",
+                "slug": hub_slug,
+                "title": inv_body.get("hub_name") or f"{display_name} Hub",
+                "created_by": user_id,
+                "status": "published",
+                "body": {
+                    "id": hub_slug,
+                    "name": inv_body.get("hub_name") or f"{display_name} Hub",
+                    "owner_name": display_name,
+                    "phone": body.phone,
+                    "pincode": inv_body.get("pincode") or "600028",
+                    "address": inv_body.get("custom_details") or "Local Mini-Hub, Chennai",
+                },
+            }
+        ).execute()
+
+    if role == "delivery_rider":
+        rider_slug = f"rider_{user_id[:8]}"
+        sb.table("content_entries").upsert(
+            {
+                "content_type": "delivery_rider",
+                "slug": rider_slug,
+                "title": display_name,
+                "created_by": user_id,
+                "status": "published",
+                "body": {
+                    "id": rider_slug,
+                    "name": display_name,
+                    "phone": body.phone,
+                    "pincode": inv_body.get("pincode") or "600028",
+                    "vehicle": inv_body.get("vehicle") or "Bike",
+                },
+            }
+        ).execute()
+
+    inv_body["claimed_at"] = now_utc().isoformat()
+    inv_body["claimed_by_uid"] = user_id
+    sb.table("content_entries").update({"status": "claimed", "body": inv_body}).eq(
+        "id", inv["id"]
+    ).execute()
+
+    return {
+        "ok": True,
+        "message": "Onboarding completed successfully!",
+        "user_id": user_id,
+        "role": role,
+        "access_token": access_token,
+    }
+
+
+@api.get("/admin/partner-metrics")
+def admin_partner_metrics(admin: dict = Depends(get_admin_user)):
+    profiles = (
+        sb.table("profiles")
+        .select(
+            "id, display_name, email, phone_e164, referral_code, referred_by, account_type, created_at"
+        )
+        .execute()
+        .data
+    )
+    total_customers = len(
+        [p for p in profiles if (p.get("account_type") or "normal") in ("normal", "shopper")]
+    )
+
+    referrers = [
+        p for p in profiles if (p.get("account_type") or "") in ("partner_earner", "referral_partner")
+    ]
+    sub_entries = (
+        sb.table("content_entries")
+        .select("*")
+        .eq("content_type", "subscriber_referral")
+        .execute()
+        .data
+    )
+
+    ref_trees = []
+    for r in referrers:
+        r_code = r.get("referral_code")
+        linked_profiles = [p for p in profiles if p.get("referred_by") == r_code]
+        linked_subs = [
+            s
+            for s in sub_entries
+            if (s.get("body") or {}).get("referrer_code") == r_code
+            or s.get("created_by") == r["id"]
+        ]
+        ref_trees.append(
+            {
+                "id": r["id"],
+                "name": r.get("display_name") or "Promoter",
+                "phone": r.get("phone_e164") or "",
+                "referral_code": r_code,
+                "direct_customer_count": len(linked_profiles),
+                "subscribers_count": len(linked_subs),
+                "subscribers": [
+                    {
+                        "name": (s.get("body") or {}).get("subscriber_name") or s.get("title"),
+                        "plan": (s.get("body") or {}).get("daily_plan") or 5,
+                        "cycle_day": (s.get("body") or {}).get("cycle_day") or 1,
+                        "completed": (s.get("body") or {}).get("completed") or False,
+                    }
+                    for s in linked_subs[:10]
+                ],
+            }
+        )
+
+    stock_points = (
+        sb.table("content_entries")
+        .select("*")
+        .eq("content_type", "stock_point")
+        .execute()
+        .data
+    )
+    riders = (
+        sb.table("content_entries")
+        .select("*")
+        .eq("content_type", "delivery_rider")
+        .execute()
+        .data
+    )
+    invites = (
+        sb.table("content_entries")
+        .select("*")
+        .eq("content_type", "partner_invitation")
+        .execute()
+        .data
+    )
+
+    return {
+        "total_customers": total_customers,
+        "total_referral_partners": len(referrers),
+        "total_subaccounts": len(sub_entries),
+        "referral_trees": ref_trees,
+        "stock_hubs_count": len(stock_points),
+        "delivery_riders_count": len(riders),
+        "invites_pending": len([i for i in invites if i.get("status") == "pending"]),
+        "invites_claimed": len([i for i in invites if i.get("status") == "claimed"]),
+        "stock_points": [
+            {
+                "id": sp["slug"],
+                "name": (sp.get("body") or {}).get("name") or sp.get("title"),
+                "owner": (sp.get("body") or {}).get("owner_name") or "",
+                "phone": (sp.get("body") or {}).get("phone") or "",
+                "pincode": (sp.get("body") or {}).get("pincode") or "",
+            }
+            for sp in stock_points
+        ],
+        "delivery_riders": [
+            {
+                "id": dr["slug"],
+                "name": (dr.get("body") or {}).get("name") or dr.get("title"),
+                "phone": (dr.get("body") or {}).get("phone") or "",
+                "pincode": (dr.get("body") or {}).get("pincode") or "",
+                "vehicle": (dr.get("body") or {}).get("vehicle") or "",
+            }
+            for dr in riders
+        ],
+    }
 
 
 @api.get("/health")

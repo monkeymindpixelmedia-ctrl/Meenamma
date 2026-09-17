@@ -73,6 +73,8 @@ export function AuthProvider({ children }) {
     const registration = {
       name,
       email,
+      phone: extra.phone || "",
+      phone_e164: extra.phone || "",
       daily_plan,
       pincode: extra.pincode || "",
       upi_id: extra.upi_id || "",
@@ -85,7 +87,7 @@ export function AuthProvider({ children }) {
       password,
       options: {
         emailRedirectTo: `${window.location.origin}/auth/verify-email`,
-        data: { display_name: name, daily_plan, ...extra },
+        data: { display_name: name, daily_plan, phone: extra.phone || "", ...extra },
       },
     });
     if (error) throw authError(error);

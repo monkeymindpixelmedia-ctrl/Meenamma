@@ -21,6 +21,14 @@ function MailIcon({ className }) {
   );
 }
 
+function PhoneIcon({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.75">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+    </svg>
+  );
+}
+
 function LockIcon({ className }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.75">
@@ -127,6 +135,7 @@ export default function Register() {
   const [accountType, setAccountType] = useState("normal"); // "normal" | "student"
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [pincode, setPincode] = useState("");
   const [error, setError] = useState("");
@@ -146,9 +155,10 @@ export default function Register() {
     if (existingUser) {
       if (existingUser.name && !name) setName(existingUser.name);
       if (existingUser.email && !email) setEmail(existingUser.email);
+      if (existingUser.phone && !phone) setPhone(existingUser.phone);
       if (existingUser.pincode && !pincode) setPincode(existingUser.pincode);
     }
-  }, [existingUser, name, email, pincode]);
+  }, [existingUser, name, email, phone, pincode]);
 
   React.useEffect(() => {
     let active = true;
@@ -176,6 +186,7 @@ export default function Register() {
       if (existingUser) {
         await api.post("/profile/bootstrap", {
           name,
+          phone,
           daily_plan: 5,
           pincode,
           cadence: "manual",
@@ -186,6 +197,7 @@ export default function Register() {
         loggedInUser = await refreshUser();
       } else {
         loggedInUser = await register(name, email, password, 5, {
+          phone,
           pincode,
           cadence: "manual",
           referred_by_code,
@@ -360,6 +372,27 @@ export default function Register() {
                 data-testid="register-email-input"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-mono uppercase tracking-wider text-amber-200/70 mb-1.5">
+              WhatsApp Phone Number <span className="text-amber-400 font-bold">*</span>
+            </label>
+            <div className="relative">
+              <PhoneIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-400/60 pointer-events-none" />
+              <input
+                className="input-cyberpunk input-minimal pl-10 w-full"
+                type="tel"
+                placeholder="+91 98401 23456"
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+                required
+                data-testid="register-phone-input"
+              />
+            </div>
+            <p className="text-[10px] text-amber-200/50 mt-1 font-sans">
+              Used for WhatsApp OTP login and instant password resets.
+            </p>
           </div>
 
           {!existingUser && (
