@@ -53,7 +53,7 @@ function Shell() {
 
   React.useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const ref = params.get("ref");
+    const ref = params.get("ref") || params.get("code");
     if (ref) localStorage.setItem("meenamma_ref", ref);
   }, [location]);
 

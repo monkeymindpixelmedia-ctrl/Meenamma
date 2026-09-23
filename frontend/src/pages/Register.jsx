@@ -250,7 +250,7 @@ export default function Register() {
           <h1 className="font-serif text-amber-100 text-3xl font-medium tracking-wide">
             MEENAMMA <span className="text-amber-400 text-xs block font-sans tracking-[0.3em] uppercase mt-1 font-semibold">Micro-Savings</span>
           </h1>
-          <p className="text-amber-200/60 text-xs mt-2 font-mono uppercase tracking-wider">Start Your Daily Kudam Wealth Ritual</p>
+          <p className="text-amber-200/60 text-xs mt-2 font-mono uppercase tracking-wider">Start Your Daily Subscription Plan</p>
         </div>
 
         {/* Account Type Toggle */}

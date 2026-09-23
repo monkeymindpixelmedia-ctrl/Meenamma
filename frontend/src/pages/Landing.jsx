@@ -343,7 +343,7 @@ export default function Landing() {
               onClick={() => navigate(user ? "/dashboard" : "/register")}
               data-testid="begin-kudam-btn"
             >
-              Begin Your Kudam <ArrowRight size={16} />
+              Start Your Subscription <ArrowRight size={16} />
             </motion.button>
             <motion.button
               whileHover={{ scale: 1.02, y: -2 }}
@@ -380,9 +380,9 @@ export default function Landing() {
             className="bg-[#0E0C09]/90 border border-[#FFD700]/30 rounded-xl p-10 lg:p-14 flex flex-col items-start group hover:border-[#FFD700]/60 transition-colors shadow-2xl backdrop-blur-xl"
           >
             <p className="text-[#FFD700] text-[10px] uppercase font-mono mb-4 tracking-[0.4em]">PATH A · HABIT</p>
-            <h3 className="font-serif text-[#F5F2EB] text-3xl lg:text-4xl font-medium">The Daily Kudam</h3>
+            <h3 className="font-serif text-[#F5F2EB] text-3xl lg:text-4xl font-medium">The Daily Subscription</h3>
             <p className="text-[#A8A090] text-base leading-relaxed mt-5">
-              Save ₹1, ₹5 or ₹10 every day. When your kudam fills, you unlock a
+              Save ₹1, ₹5 or ₹10 every day. When your subscription completes, you unlock a
               20% discount and a family hamper on your next fresh catch order.
             </p>
             <div className="mt-10 flex justify-center w-full transform group-hover:scale-105 transition-transform duration-700 ease-[0.16,1,0.3,1]">

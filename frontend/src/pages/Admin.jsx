@@ -1107,14 +1107,26 @@ export default function Admin() {
   const [msg, setMsg] = useState("");
 
   const load = useCallback(async () => {
-    const [s, p, b, k, u] = await Promise.all([
-      api.get("/admin/stats"), api.get("/products"), api.get("/admin/bookings"),
-      api.get("/admin/kudams"), api.get("/admin/users"),
+    const results = await Promise.allSettled([
+      api.get("/admin/stats"),
+      api.get("/products"),
+      api.get("/admin/bookings"),
+      api.get("/admin/kudams"),
+      api.get("/admin/users"),
     ]);
-    setStats(s.data); setProducts(p.data); setBookings(b.data); setKudams(k.data); setUsers(u.data);
+    if (results[0].status === "fulfilled") setStats(results[0].value.data);
+    if (results[1].status === "fulfilled") setProducts(results[1].value.data);
+    if (results[2].status === "fulfilled") setBookings(results[2].value.data);
+    if (results[3].status === "fulfilled") setKudams(results[3].value.data);
+    if (results[4].status === "fulfilled") setUsers(results[4].value.data);
+
+    const rejected = results.find(r => r.status === "rejected");
+    if (rejected && results[1].status !== "fulfilled") {
+      setMsg(formatApiErrorDetail(rejected.reason?.response?.data?.detail));
+    }
   }, []);
 
-  useEffect(() => { load().catch((e) => setMsg(formatApiErrorDetail(e.response?.data?.detail))); }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   const saveProduct = async (form) => {
     setBusy(true); setMsg("");
