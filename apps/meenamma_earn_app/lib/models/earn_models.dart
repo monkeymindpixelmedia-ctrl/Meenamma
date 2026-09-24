@@ -9,6 +9,12 @@ class EarnMember {
   final String organization;
   final String status;
   final String upiId;
+  final String accountHolder;
+  final String bankAccount;
+  final String ifsc;
+  final String internCode;
+  final int dayOfInternship;
+  final String createdAt;
   final int totalSalaryPaid;
   final int currentAccruedSalary;
   final List<DeliverableTask> tasks;
@@ -24,10 +30,48 @@ class EarnMember {
     required this.organization,
     required this.status,
     required this.upiId,
+    this.accountHolder = '',
+    this.bankAccount = '',
+    this.ifsc = '',
+    this.internCode = 'INT-INTERN-60D',
+    this.dayOfInternship = 1,
+    this.createdAt = '',
     required this.totalSalaryPaid,
     required this.currentAccruedSalary,
     required this.tasks,
   });
+
+  EarnMember copyWith({
+    String? name,
+    String? phone,
+    String? organization,
+    String? upiId,
+    String? accountHolder,
+    String? bankAccount,
+    String? ifsc,
+  }) {
+    return EarnMember(
+      id: id,
+      name: name ?? this.name,
+      email: email,
+      phone: phone ?? this.phone,
+      trackId: trackId,
+      trackTitle: trackTitle,
+      monthlySalary: monthlySalary,
+      organization: organization ?? this.organization,
+      status: status,
+      upiId: upiId ?? this.upiId,
+      accountHolder: accountHolder ?? this.accountHolder,
+      bankAccount: bankAccount ?? this.bankAccount,
+      ifsc: ifsc ?? this.ifsc,
+      internCode: internCode,
+      dayOfInternship: dayOfInternship,
+      createdAt: createdAt,
+      totalSalaryPaid: totalSalaryPaid,
+      currentAccruedSalary: currentAccruedSalary,
+      tasks: tasks,
+    );
+  }
 
   factory EarnMember.fromContentEntry(Map<String, dynamic> entry) {
     final body = entry['body'] is Map<String, dynamic>
@@ -39,22 +83,57 @@ class EarnMember {
         .map((t) => DeliverableTask.fromJson(Map<String, dynamic>.from(t as Map)))
         .toList();
 
+    final id = entry['id']?.toString() ?? '';
+    final code = 'INT-${id.length > 6 ? id.substring(0, 6).toUpperCase() : 'COHORT'}-60D';
+
     return EarnMember(
-      id: entry['id']?.toString() ?? '',
+      id: id,
       name: body['name']?.toString() ?? entry['title']?.toString() ?? 'Member',
       email: body['email']?.toString() ?? '',
       phone: body['phone']?.toString() ?? '',
       trackId: body['track_id']?.toString() ?? 'student',
       trackTitle: body['track_title']?.toString() ?? 'Student Intern',
       monthlySalary: (body['monthly_salary'] as num?)?.toInt() ?? 5000,
-      organization: body['organization']?.toString() ?? 'Anna University',
+      organization: body['organization']?.toString() ?? 'College / University',
       status: body['status']?.toString() ?? 'Active',
-      upiId: body['upi_id']?.toString() ?? 'member@upi',
-      totalSalaryPaid: (body['total_paid'] as num?)?.toInt() ?? 5000,
-      currentAccruedSalary: (body['current_accrued'] as num?)?.toInt() ?? 2500,
+      upiId: body['upi_id']?.toString() ?? '',
+      accountHolder: body['account_holder']?.toString() ?? '',
+      bankAccount: body['bank_account']?.toString() ?? '',
+      ifsc: body['ifsc']?.toString() ?? '',
+      internCode: code,
+      dayOfInternship: 1,
+      createdAt: entry['created_at']?.toString() ?? DateTime.now().toIso8601String(),
+      totalSalaryPaid: (body['total_paid'] as num?)?.toInt() ?? 0,
+      currentAccruedSalary: (body['current_accrued'] as num?)?.toInt() ?? 0,
       tasks: tasks.isNotEmpty ? tasks : DeliverableTask.defaultStudentTasks,
     );
   }
+}
+
+class ReferralItem {
+  final String id;
+  final String name;
+  final String phone;
+  final String date;
+  final String status;
+  final String statusLabel;
+  final String plan;
+  final String issue;
+  final String source;
+  final String whatsappMessage;
+
+  const ReferralItem({
+    required this.id,
+    required this.name,
+    required this.phone,
+    required this.date,
+    required this.status,
+    required this.statusLabel,
+    required this.plan,
+    required this.issue,
+    required this.source,
+    required this.whatsappMessage,
+  });
 }
 
 class DeliverableTask {
