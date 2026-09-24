@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../models/earn_models.dart';
 import '../services/earn_api_service.dart';
@@ -74,6 +76,15 @@ class _EarnAuthScreenState extends State<EarnAuthScreen> {
     ));
   }
 
+  // Same client IDs as the Customer App (same Firebase/Google project)
+  static const String _googleWebClientId =
+      '101097137897-s31t2k14cc89tpubaoe247c8o69jvu57.apps.googleusercontent.com';
+  static const String _supabaseUrl = 'https://sejfusqyxtmejbwppexe.supabase.co';
+  static const String _supabaseAnonKey =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNlamZ1c3F5eHRtZWpid3BwZXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NTg3MzcsImV4cCI6MjEwMjEzNDczN30.3xQOWceFzO0AbJiBXzUH5ShX6-iDEhQ7s1UVu8L6wGA';
+
+  static bool _googleInitialized = false;
+
   Future<void> _handleGoogleSignIn() async {
     setState(() {
       _loading = true;
@@ -81,28 +92,72 @@ class _EarnAuthScreenState extends State<EarnAuthScreen> {
     });
 
     try {
-      // google_sign_in v7 uses a singleton with initialize() + authenticate()
-      final gs = GoogleSignIn.instance;
-      await gs.initialize();
-      final account = await gs.authenticate();
-      final email = account.email;
-      final name = account.displayName ?? email.split('@').first;
-      final googleId = account.id;
+      // Step 1: Native Google Sign-In with serverClientId (same as Customer App)
+      if (!_googleInitialized) {
+        await GoogleSignIn.instance.initialize(
+          serverClientId: _googleWebClientId,
+        );
+        _googleInitialized = true;
+      }
+      final account = await GoogleSignIn.instance.authenticate();
+      final idToken = account.authentication.idToken;
 
-      final member = await EarnApiService.getOrCreateGoogleMember(
-        email: email,
-        name: name,
-        googleId: googleId,
-      );
-      if (!mounted) return;
-      widget.onAuthenticated(member);
+      if (idToken != null) {
+        // Step 2: Exchange idToken with Supabase directly (same as Customer App)
+        final res = await http.post(
+          Uri.parse('$_supabaseUrl/auth/v1/token?grant_type=id_token'),
+          headers: {
+            'apikey': _supabaseAnonKey,
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({'provider': 'google', 'id_token': idToken}),
+        ).timeout(const Duration(seconds: 8));
+
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          final user = data['user'] as Map<String, dynamic>?;
+          final email = user?['email'] as String? ?? account.email;
+          final name = account.displayName ?? email.split('@').first;
+          final googleId = account.id;
+
+          final member = await EarnApiService.getOrCreateGoogleMember(
+            email: email,
+            name: name,
+            googleId: googleId,
+          );
+          if (!mounted) return;
+          widget.onAuthenticated(member);
+          return;
+        }
+      }
+    } on GoogleSignInException catch (e) {
+      if (e.code == GoogleSignInExceptionCode.canceled) {
+        if (mounted) setState(() { _loading = false; _errorMessage = 'Sign-in cancelled.'; });
+        return;
+      }
+      // Fall through to OAuth browser fallback
+      debugPrint('Native Google Sign-In failed: $e — trying browser OAuth');
     } catch (e) {
-      debugPrint('Native Google Sign-In failed: $e — opening account dialog');
-      if (!mounted) return;
+      debugPrint('Google Sign-In error: $e — trying browser OAuth');
+    }
+
+    // Step 3: Fallback — open Supabase OAuth in in-app browser (same as Customer App)
+    // Deep link: org.meenamma.earn://auth-callback
+    try {
+      final oauthUrl = Uri.parse(
+          '$_supabaseUrl/auth/v1/authorize?provider=google&redirect_to=org.meenamma.earn://auth-callback');
+      if (await canLaunchUrl(oauthUrl)) {
+        final launched = await launchUrl(oauthUrl, mode: LaunchMode.inAppBrowserView);
+        if (!launched) await launchUrl(oauthUrl, mode: LaunchMode.externalApplication);
+        if (mounted) setState(() { _loading = false; _errorMessage = null; });
+        return;
+      }
+    } catch (_) {}
+
+    // Step 4: Last resort — show manual email dialog
+    if (mounted) {
       setState(() => _loading = false);
       _showGoogleAccountDialog();
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
   }
 
