@@ -29,6 +29,7 @@ import {
   fetchLiveInventories,
   fetchLogisticsAuditLogs,
 } from "../lib/logisticsSync";
+import StudentNetworkPanel from "../components/StudentNetworkPanel";
 
 const TABS = [
   "Overview",
@@ -36,6 +37,7 @@ const TABS = [
   "Orders",
   "Kudams",
   "Customers",
+  "Student Network",
   "Partner Network & Invites",
   "WhatsApp",
   "Logistics & Hubs",
@@ -1389,6 +1391,8 @@ export default function Admin() {
                   ))}
                 </div>
               )}
+
+              {tab === "Student Network" && <StudentNetworkPanel />}
 
               {tab === "Partner Network & Invites" && <PartnerNetworkPanel />}
 

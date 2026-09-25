@@ -2940,6 +2940,280 @@ def admin_partner_metrics(admin: dict = Depends(get_admin_user)):
     }
 
 
+# ==================== Student Network & Registrations ====================
+class StudentRegisterIn(BaseModel):
+    name: str = Field(..., min_length=2, max_length=150)
+    college: str = Field(..., min_length=2, max_length=255)
+    department: str = Field(..., min_length=2, max_length=255)
+    phone: str = Field(..., min_length=10, max_length=20)
+    email: Optional[str] = Field(default="", max_length=150)
+    year_of_study: Optional[str] = Field(default="3rd Year", max_length=50)
+    has_social_media: bool = False
+    social_platforms: list[str] = Field(default_factory=list)
+    social_links: dict = Field(default_factory=dict)
+    role_preference: str = Field(..., description="creator, developer, or editor")
+    portfolio_url: Optional[str] = Field(default="", max_length=500)
+    notes: Optional[str] = Field(default="", max_length=1000)
+
+
+class StudentStatusUpdateIn(BaseModel):
+    application_status: str = Field(..., description="new, contacted, shortlisted, enrolled, rejected")
+    admin_notes: Optional[str] = None
+
+
+@api.post("/students/register")
+def register_student(body: StudentRegisterIn, request: Request):
+    clean_name = body.name.strip()
+    clean_college = body.college.strip()
+    clean_dept = body.department.strip()
+    clean_phone = normalize_phone(body.phone)
+    raw_role = body.role_preference.strip().lower()
+    
+    if "creator" in raw_role:
+        clean_role = "creator"
+    elif "developer" in raw_role:
+        clean_role = "developer"
+    elif "editor" in raw_role:
+        clean_role = "editor"
+    else:
+        clean_role = "creator"
+
+    random_code = secrets.randbelow(90000) + 10000
+    app_id = f"MSN-2026-{random_code}"
+    content_slug = f"student_{clean_phone[-10:]}_{secrets.token_hex(3)}"
+
+    creator_id = None
+    try:
+        p_row = sb.table("profiles").select("id").limit(1).execute().data
+        if p_row:
+            creator_id = p_row[0]["id"]
+    except Exception:
+        pass
+    if not creator_id:
+        creator_id = "027d64b4-1cc4-48f1-b8c6-122bedd3b251"
+
+    submitted_data = {
+        "application_id": app_id,
+        "name": clean_name,
+        "college": clean_college,
+        "department": clean_dept,
+        "phone": clean_phone,
+        "email": (body.email or "").strip().lower(),
+        "year_of_study": (body.year_of_study or "").strip(),
+        "has_social_media": bool(body.has_social_media),
+        "social_platforms": body.social_platforms or [],
+        "social_links": body.social_links or {},
+        "role_preference": clean_role,
+        "portfolio_url": (body.portfolio_url or "").strip(),
+        "notes": (body.notes or "").strip(),
+        "application_status": "new",
+        "admin_notes": "",
+        "submitted_at": now_utc().isoformat(),
+        "client_ip": request.client.host if request.client else "",
+    }
+
+    row = {
+        "content_type": "student_registration",
+        "slug": content_slug,
+        "title": f"{clean_name} - {clean_college} ({clean_role.capitalize()})",
+        "status": "published",
+        "locale": "en",
+        "created_by": creator_id,
+        "body": submitted_data,
+    }
+
+    try:
+        sb.table("content_entries").insert(row).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error while saving registration: {str(e)}")
+
+    # Local fallback backup file
+    try:
+        data_dir = os.path.join(os.path.dirname(__file__), "data")
+        os.makedirs(data_dir, exist_ok=True)
+        backup_file = os.path.join(data_dir, "student_registrations.json")
+        entries = []
+        if os.path.exists(backup_file):
+            try:
+                with open(backup_file, "r", encoding="utf-8") as f:
+                    entries = json.load(f)
+            except Exception:
+                entries = []
+        entries.append(submitted_data)
+        with open(backup_file, "w", encoding="utf-8") as f:
+            json.dump(entries, f, indent=2)
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "application_id": app_id,
+        "role": clean_role,
+        "message": "Thank you for registering! We've received your submission."
+    }
+
+
+@api.get("/admin/students")
+def admin_list_students(
+    q: Optional[str] = None,
+    role: Optional[str] = None,
+    status: Optional[str] = None,
+    admin: dict = Depends(get_admin_user)
+):
+    try:
+        query = (
+            sb.table("content_entries")
+            .select("*")
+            .eq("content_type", "student_registration")
+            .order("created_at", desc=True)
+        )
+        res = query.execute().data or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error querying student registrations: {str(e)}")
+
+    items = []
+    for r in res:
+        b = r.get("body") or {}
+        item = {
+            "id": r["id"],
+            "slug": r.get("slug"),
+            "created_at": r.get("created_at"),
+            "application_id": b.get("application_id") or f"MSN-{r['id'][:6]}",
+            "name": b.get("name") or r.get("title") or "Unknown",
+            "college": b.get("college") or "",
+            "department": b.get("department") or "",
+            "phone": b.get("phone") or "",
+            "email": b.get("email") or "",
+            "year_of_study": b.get("year_of_study") or "",
+            "has_social_media": b.get("has_social_media", False),
+            "social_platforms": b.get("social_platforms") or [],
+            "social_links": b.get("social_links") or {},
+            "role_preference": (b.get("role_preference") or "creator").lower(),
+            "portfolio_url": b.get("portfolio_url") or "",
+            "notes": b.get("notes") or "",
+            "application_status": b.get("application_status") or "new",
+            "admin_notes": b.get("admin_notes") or "",
+        }
+
+        if q:
+            match_str = f"{item['name']} {item['college']} {item['department']} {item['phone']} {item['email']} {item['application_id']}".lower()
+            if q.lower() not in match_str:
+                continue
+
+        if role and role.lower() != "all":
+            if item["role_preference"] != role.lower():
+                continue
+
+        if status and status.lower() != "all":
+            if item["application_status"] != status.lower():
+                continue
+
+        items.append(item)
+
+    return {
+        "total": len(items),
+        "students": items,
+        "counts": {
+            "all": len(res),
+            "creator": sum(1 for r in res if (r.get("body") or {}).get("role_preference") == "creator"),
+            "developer": sum(1 for r in res if (r.get("body") or {}).get("role_preference") == "developer"),
+            "editor": sum(1 for r in res if (r.get("body") or {}).get("role_preference") == "editor"),
+        }
+    }
+
+
+@api.patch("/admin/students/{entry_id}")
+def admin_update_student(entry_id: str, body: StudentStatusUpdateIn, admin: dict = Depends(get_admin_user)):
+    res = sb.table("content_entries").select("*").eq("id", entry_id).execute().data
+    if not res:
+        raise HTTPException(status_code=404, detail="Student record not found")
+
+    entry = res[0]
+    entry_body = entry.get("body") or {}
+    entry_body["application_status"] = body.application_status
+    if body.admin_notes is not None:
+        entry_body["admin_notes"] = body.admin_notes
+
+    sb.table("content_entries").update({"body": entry_body}).eq("id", entry_id).execute()
+    return {"success": True, "updated_status": body.application_status}
+
+
+@api.delete("/admin/students/{entry_id}")
+def admin_delete_student(entry_id: str, admin: dict = Depends(get_admin_user)):
+    sb.table("content_entries").delete().eq("id", entry_id).execute()
+    return {"success": True, "deleted_id": entry_id}
+
+
+@api.get("/admin/students/export")
+def admin_export_students(admin: dict = Depends(get_admin_user)):
+    import csv
+    import io
+    from fastapi.responses import Response
+
+    res = (
+        sb.table("content_entries")
+        .select("*")
+        .eq("content_type", "student_registration")
+        .order("created_at", desc=True)
+        .execute()
+        .data or []
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Application ID",
+        "Submitted Date",
+        "Name",
+        "Role Preference",
+        "College",
+        "Department",
+        "Year of Study",
+        "Phone / WhatsApp",
+        "Email",
+        "Has Social Media",
+        "Social Platforms",
+        "Social Links",
+        "Portfolio URL",
+        "Status",
+        "Student Notes",
+        "Admin Notes",
+    ])
+
+    for r in res:
+        b = r.get("body") or {}
+        platforms = ", ".join(b.get("social_platforms") or [])
+        links_dict = b.get("social_links") or {}
+        links_str = " | ".join(f"{k}: {v}" for k, v in links_dict.items() if v)
+        writer.writerow([
+            b.get("application_id") or "",
+            r.get("created_at") or "",
+            b.get("name") or "",
+            (b.get("role_preference") or "").capitalize(),
+            b.get("college") or "",
+            b.get("department") or "",
+            b.get("year_of_study") or "",
+            b.get("phone") or "",
+            b.get("email") or "",
+            "Yes" if b.get("has_social_media") else "No",
+            platforms,
+            links_str,
+            b.get("portfolio_url") or "",
+            b.get("application_status") or "new",
+            b.get("notes") or "",
+            b.get("admin_notes") or "",
+        ])
+
+    csv_data = output.getvalue()
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=meenamma-students-{datetime.now().strftime('%Y%m%d')}.csv"
+        }
+    )
+
+
 @api.get("/health")
 def health():
     return {"status": "ok", "db": "supabase"}

@@ -1,0 +1,48 @@
+[
+  {
+    "application_id": "MSN-2026-19211",
+    "name": "Karthi Vel",
+    "college": "Anna University, CEG",
+    "department": "Computer Science and Engineering",
+    "phone": "919876543210",
+    "email": "karthi@example.com",
+    "year_of_study": "3rd Year",
+    "has_social_media": true,
+    "social_platforms": [
+      "Instagram",
+      "LinkedIn",
+      "GitHub"
+    ],
+    "social_links": {
+      "instagram": "https://instagram.com/karthivel",
+      "linkedin": "https://linkedin.com/in/karthivel",
+      "github": "https://github.com/karthivel"
+    },
+    "role_preference": "developer",
+    "portfolio_url": "https://karthivel.dev",
+    "notes": "Excited to build web apps and data pipelines for Meenamma!",
+    "application_status": "new",
+    "admin_notes": "",
+    "submitted_at": "2026-09-25T10:11:56.203764+00:00",
+    "client_ip": "testclient"
+  },
+  {
+    "application_id": "MSN-2026-40470",
+    "name": "Ananya R",
+    "college": "Loyola College, Chennai",
+    "department": "Visual Communication",
+    "phone": "919123456780",
+    "email": "ananya@example.com",
+    "year_of_study": "2nd Year",
+    "has_social_media": false,
+    "social_platforms": [],
+    "social_links": {},
+    "role_preference": "creator",
+    "portfolio_url": "",
+    "notes": "Interested in dock photography and reels.",
+    "application_status": "new",
+    "admin_notes": "",
+    "submitted_at": "2026-09-25T10:28:49.814445+00:00",
+    "client_ip": "testclient"
+  }
+]

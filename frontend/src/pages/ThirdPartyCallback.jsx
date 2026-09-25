@@ -79,6 +79,26 @@ export default function ThirdPartyCallback() {
           );
         }
 
+        // Check if authentication originated from earn.meenamma.org
+        const getCookie = (name) => {
+          const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
+          return match ? decodeURIComponent(match[1]) : null;
+        };
+
+        const authTarget = getCookie('meenamma_auth_target');
+        const authOrigin = getCookie('meenamma_auth_origin') || 'https://earn.meenamma.org';
+
+        if (authTarget === 'earn') {
+          const isProd = window.location.hostname.includes('meenamma.org');
+          const domainAttr = isProd ? '; Domain=.meenamma.org' : '';
+          document.cookie = `meenamma_auth_target=; Path=/${domainAttr}; max-age=0; SameSite=Lax${isProd ? '; Secure' : ''}`;
+          document.cookie = `meenamma_auth_origin=; Path=/${domainAttr}; max-age=0; SameSite=Lax${isProd ? '; Secure' : ''}`;
+
+          const hash = `#access_token=${encodeURIComponent(activeSession.access_token)}&refresh_token=${encodeURIComponent(activeSession.refresh_token)}&expires_in=${activeSession.expires_in || 3600}&token_type=bearer&type=recovery`;
+          window.location.replace(`${authOrigin}/${hash}`);
+          return;
+        }
+
         // 5. Refresh user state in AuthContext & redirect
         const appUser = await refreshUser(activeSession);
 

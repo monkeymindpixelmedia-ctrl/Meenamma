@@ -321,6 +321,19 @@ export default function App() {
       window.location.search.includes('code=')
     );
 
+    // If code exists in URL search params (PKCE flow), exchange it explicitly
+    const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const authCode = urlParams ? urlParams.get('code') : null;
+    if (authCode && typeof supabase.auth.exchangeCodeForSession === 'function') {
+      supabase.auth.exchangeCodeForSession(authCode).then(({ data, error }) => {
+        if (!error && data?.session?.user) {
+          handleUserSession(data.session.user, false);
+          setShowSplash(false);
+          window.history.replaceState({}, document.title, '/');
+        }
+      }).catch(() => {});
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         handleUserSession(session.user, false);
@@ -475,10 +488,21 @@ export default function App() {
     setAuthError('');
     try {
       const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      // Supabase allow-list registers http://localhost:3000/auth/callback/google
+      const origin = window.location.origin;
+      const isProdDomain = window.location.hostname.includes('meenamma.org');
+      const cookieDomain = isProdDomain ? '; Domain=.meenamma.org' : '';
+
+      // Set cross-subdomain cookies so if Supabase falls back to meenamma.org,
+      // meenamma.org immediately bounces the authenticated session back to earn.meenamma.org
+      document.cookie = `meenamma_auth_target=earn${cookieDomain}; Path=/; max-age=1800; SameSite=Lax${isProdDomain ? '; Secure' : ''}`;
+      document.cookie = `meenamma_auth_origin=${encodeURIComponent(origin)}${cookieDomain}; Path=/; max-age=1800; SameSite=Lax${isProdDomain ? '; Secure' : ''}`;
+      try {
+        sessionStorage.setItem('meenamma_auth_target', 'earn');
+      } catch {}
+
       const redirectUri = isLocal
-        ? 'http://localhost:3000/auth/callback/google'
-        : `${window.location.origin}/auth/callback/google`;
+        ? `${origin}/auth/callback/google`
+        : 'https://earn.meenamma.org/auth/callback/google';
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',

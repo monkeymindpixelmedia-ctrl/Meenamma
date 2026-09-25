@@ -16,8 +16,10 @@ import Admin from "./pages/Admin";
 import Profile from "./pages/Profile";
 import Referral from "./pages/Referral";
 import Legal from "./pages/Legal";
+import StudentRegistration from "./pages/StudentRegistration";
 import Footer from "./components/Footer";
 import { motion, AnimatePresence } from "framer-motion";
+import { supabase } from "./lib/supabase";
 import "./App.css";
 
 function Protected({ children }) {
@@ -45,6 +47,9 @@ const AUTH_PAGES = [
   "/auth/callback/google",
   "/auth/verify-email",
   "/auth/reset-password",
+  "/students",
+  "/student-register",
+  "/join-team",
 ];
 
 function Shell() {
@@ -52,9 +57,43 @@ function Shell() {
   const { user } = useAuth();
 
   React.useEffect(() => {
+    // Check if this was a Google OAuth redirect meant for earn.meenamma.org
+    const getCookie = (name) => {
+      const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
+      return match ? decodeURIComponent(match[1]) : null;
+    };
+    const authTarget = getCookie('meenamma_auth_target');
+    const authOrigin = getCookie('meenamma_auth_origin') || 'https://earn.meenamma.org';
+
+    if (authTarget === 'earn') {
+      const isProd = window.location.hostname.includes('meenamma.org');
+      const domainAttr = isProd ? '; Domain=.meenamma.org' : '';
+      document.cookie = `meenamma_auth_target=; Path=/${domainAttr}; max-age=0; SameSite=Lax${isProd ? '; Secure' : ''}`;
+      document.cookie = `meenamma_auth_origin=; Path=/${domainAttr}; max-age=0; SameSite=Lax${isProd ? '; Secure' : ''}`;
+
+      // If tokens or auth code are in current URL, forward immediately
+      if (window.location.hash.includes('access_token') || window.location.search.includes('code=')) {
+        window.location.replace(`${authOrigin}/${window.location.search}${window.location.hash}`);
+        return;
+      }
+
+      // If Supabase already extracted the session into client storage
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          const hash = `#access_token=${encodeURIComponent(session.access_token)}&refresh_token=${encodeURIComponent(session.refresh_token)}&expires_in=${session.expires_in || 3600}&token_type=bearer&type=recovery`;
+          window.location.replace(`${authOrigin}/${hash}`);
+        } else {
+          window.location.replace(authOrigin);
+        }
+      }).catch(() => {
+        window.location.replace(authOrigin);
+      });
+      return;
+    }
+
     const params = new URLSearchParams(location.search);
     const ref = params.get("ref") || params.get("code");
-    if (ref) localStorage.setItem("meenamma_ref", ref);
+    if (ref && !location.search.includes("code=")) localStorage.setItem("meenamma_ref", ref);
   }, [location]);
 
   const isAuthPage = AUTH_PAGES.includes(location.pathname);
@@ -117,6 +156,9 @@ function Shell() {
                 }
               />
               <Route path="/legal/:policy" element={<Legal />} />
+              <Route path="/students" element={<StudentRegistration />} />
+              <Route path="/student-register" element={<StudentRegistration />} />
+              <Route path="/join-team" element={<StudentRegistration />} />
               <Route path="*" element={<Navigate to="/home" replace />} />
             </Routes>
           </motion.div>
